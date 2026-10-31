@@ -1,0 +1,383 @@
+# Порт на Minecraft 1.21.11 — статус и что проверять
+
+Копия мода под 1.21.11. Эталон 1.21.4 живёт отдельно (D:\visualmod), общего compat-слоя нет:
+праки в одном дереве не переносятся на другую версию автоматически.
+
+Сборка: `./gradlew assemble "-Pmc=1.21.11"` → `visualsmod.jar` (jar собирает пользователь).
+
+## Gates (проверено статически)
+
+- Офлайн-javac по всему дереву порта: **0 ошибок** (433 файла, JDK 21, `--release 21`).
+- Аудит mixin-таргетов по merged-джару 1.21.11: **148 хуков** (`Inject` 124, `ModifyVariable` 11,
+  `Redirect` 8, `ModifyArg` 3, `ModifyConstant` 2), единственная запись — `NOJAVAP
+  org.joml.Matrix3x2fStack` (ложная: joml не входит в merged-джар; `pushMatrix()`/`popMatrix()`
+  подтверждены `javap` по joml 1.10.8). Каждый `method=`/`targets=` дескриптор, `@At`-target,
+  синтаксис имени в `@At`-target (`AT-SYNTAX`), `@Shadow` и арность `@Inject` резолвятся.
+  С 2026-10-31 аудит сверяет и **тип Callback** с возвращаемым типом цели: `CB-RET` (цель нет-void,
+  а хэндлер берёт `CallbackInfo`) и `CB-VOID` (цель void, а хэндлер берёт `CallbackInfoReturnable`).
+- Classpath для javac: `C:\hvchk\cp11.txt`, собирается `C:\hvchk\mkcp11.py` из
+  `fabric-loom/1.21.11/mojang_minecraft_info.json` + `MC_PROFILES` в `build.gradle`;
+  123 джара, ровно одна authlib (7.0.61), ни одного файла от 1.21.4.
+- Отчёты: `C:\hvchk\audit.txt`, `C:\hvchk\javac_p25.txt`.
+
+**Почему прошлый гейт врал.** Прежний `cp_w.txt` ссылался на `C:\hvchk\cp\depNN.jar`, где лежали
+библиотеки обеих версий сразу, и javac брал первую совпавшую. authlib 6.0.57 перекрывала 7.0.61,
+поэтому `GameProfile.getName()` считался валидным, гейт показывал 0 ошибок, а gradle (`authlib 7.0.61`)
+падал с 13 ошибками. Новый classpath воспроизводит ошибки gradle один-в-один — значит, теперь
+офлайн-проверка говорит то же, что скажет сборка.
+
+**Краш старта из-за арности `@Inject` (лог пользователя, 19:42).** `ChatPlusMixin` нашёл таргет
+`render(DrawContext, TextRenderer, int, int, int, boolean, boolean)`, но хэндлер был объявлен как
+`(DrawContext, CallbackInfo)`. Mixin сравнивает полный дескриптор и падает:
+`Invalid descriptor ... Expected (...7 аргументов..., CallbackInfo) but found (class_332, CallbackInfo)`
+→ `MixinTransformerError` при загрузке `ChatHud`. Правило: хэндлер `@Inject` — либо **только
+`CallbackInfo`**, либо **все аргументы цели подряд + `CallbackInfo`**; урезать середину нельзя, и
+`require = 0` здесь не спасает (таргет-то найден). Старый аудит принимал любой префикс и потому
+пропустил это; новый `check_inject` в `audit2.py` требует 0 или ровно N аргументов и сразу нашёл
+ещё три таких же файла: `ChinaHatMixin`, `CosmeticsAttachMixin` (не хватало `CameraRenderState`),
+`ItemPhysicsRenderMixin` (из 5 аргументов `renderStack` был только `MatrixStack`). Все четыре
+исправлены — без этого игра падала бы последовательно на каждом.
+
+**Вторая волна того же краша (лог пользователя, 19:52).** После чата игра упала на
+`FirstPersonArmMixin.visuals$glassArm`: цели `renderArm(...ModelPart; Z)V` не хватало
+`boolean leftSleeve`. Причина — второй слепой угол аудита: `method = RENDER_ARM` (и `TARGET` в
+`ScoreboardEditMixin`, `M` в `ScoreboardTextMixin`) — ссылка на `static final String`, а `audit2.py`
+искал только литералы, то есть эти хуки вообще не проверялись. Теперь константы разыменовываются;
+регресс-тест (временно убран `leftSleeve`) даёт `ARITY FirstPersonArmMixin:35 ... handler args 5,
+@Inject требует 0 или 6`, после возврата — 0 проблем.
+
+**Встроенные ресурспаки (ошибки в том же логе, не краш).** Все пять паков
+(`HolyVisualsBlade/Faithful/Glass/Shield/Totem`) не грузились: `Pack declares support for version
+newer than 64, but is missing mandatory fields min_format and max_format`. Генератор
+`RuntimePacks.writeMcmeta` писал старую схему `pack_format` + `supported_formats{1..9999}`.
+В 1.21.11 `PackVersion.createRangeCodec` отвергает `supported_formats.max_inclusive > 64`, если нет
+пары `min_format`/`max_format`; при наличии `min_format` поле `pack_format` обязано попадать в
+[min, max] (иначе `Pack declared support for versions 75 to 9999 but declared main format is 1`).
+Теперь пишется `{"description":..., "min_format":[75,0], "max_format":9999}` — `75.0` это
+`resource_major`/`resource_minor` из `version.json` 1.21.11, берутся через
+`SharedConstants.getGameVersion().packVersion(CLIENT_RESOURCES)`. Проверено офлайн-пробой
+`C:\hvchk\PackMetaProbe.java` на реальном кодеке: новая схема → `[75.0, 9999.*]`, старая →
+дословно та же ошибка из лога, `pack_format:1` рядом с `min_format` → отказ. Уже лежащие на диске
+паки прошлых запусков правит разовый `RuntimePacks.upgradeLegacy()` из `ResourcePackManagerMixin`
+(только папки `HolyVisuals*`, до сканирования каталога): по совпадению подписи паки не
+пересобираются, поэтому без миграции ошибки висели бы и после обновления.
+
+**Третья волна краша: синтаксис `@At`-таргета (лог пользователя, 20:38).** Игра упала на
+`NoFogMixin`: `InvalidInjectionPointException ... Failed validating @At("INVOKE").target`, в корне —
+`InvalidMemberDescriptorException: Invalid name: applyFog:`. Цель была записана в ASM-стиле
+`Lnet/minecraft/client/render/fog/FogRenderer;applyFog:(Ljava/nio/ByteBuffer;...)V`, а Mixin в форме
+`Lowner;name(desc)ret` берёт **всё до `(`** как имя — двоеточие попало в имя (`applyFog:`) и
+`MemberInfo.validate` (regex `^<?[\w\p{Sc}]+>?$`) отверг его до всякой проверки таргета. Доказано
+пробой `C:\hvchk\mix\ParseProbe.java` на самом Mixin 0.8.7: обе формы с `:` падают, форма без `:` —
+`parsed OK`. Тот же дефект был ещё в трёх файлах (`AnimeFocusFogMixin`, `ShadersAtmosphereMixin`,
+`SoftFadeFogMixin`) — все четыре исправлены; сама цель при этом верна: `javap -c` показывает вызов
+`applyFog(ByteBuffer,int,Vector4f,float×6)` внутри `applyFog(Camera,...)` на offset 214, а нужный
+local (`FogData`) жив на этом месте. Слепой угол аудита: regex цели в `audit2.py` требовал `(` сразу
+после имени и такие строки молча пропускал. Теперь есть проверка `AT-SYNTAX` (имя цели — чистый
+идентификатор, без `:`), а резолв ищет `:?` после имени, чтобы цель всё равно проверялась.
+
+**Четвёртая волна: краш в мире (лог пользователя, 21:28).** Игра стартовала, но упала при заходе в мир:
+`IllegalStateException: Missing elements in vertex: LineWidth` — сначала из `CombatPulse.drawPulse`
+(перехвачено `Diag.once`), затем фатально из `CustomParticleManager.render`. Причина одна: в 1.21.11
+у `RenderLayers.lines()` формат `POSITION_COLOR_NORMAL_LINE_WIDTH`, и `VertexConsumer` получил метод
+`lineWidth(float)`; ванильный `VertexRendering.method_62299` пишет
+`.vertex(...).color(int).normal(entry, Vector3f).lineWidth(float)` на каждую вершину. Наш
+`WorldRenderUtil.line()` писал pos+color+normal, и `BufferBuilder` (`class_287.method_60806`) отвергал
+ flush. Через `WorldRenderUtil` идут все 14 мест с `lines()` (CombatPulse, Prediction, HolyItems,
+RespawnFx), прямых `.vertex(` в них нет — правка в одном методе закрывает всё. Второй стек
+(`CustomParticleManager`) — не отдельный баг: исключение, поймавшееся внутри
+`VertexConsumerProvider.Immediate`, оставляет буфер недописанным, и следующий `getBuffer(...)`
+падает уже необратимо.
+
+**Тот же лог: модели мечей не грузились (`Expected minU to be a Float, was null`).** В
+`models/item/katana.json` (и `knight`, `scythe`) часть `"uv"` была `[null, v, u, null]`.
+В 1.21.11 `ModelElementFace$Deserializer.getUV` читает ровно 4 обязательных float через
+`JsonHelper.asFloat`, `null` → `JsonSyntaxException`; в 1.21.4 тот же `JsonHelper.asFloat` ведёт себя
+так же, то есть модели были сломаны и там (пользователь играет стилем DAGGER и их не видел).
+Старый генератор понимал «null» как «авто-ячейка»; фактический смысл — `[u2-4, v1, u2, v1+4]`
+(атлас 4×4 по 16 px, в UV-единицах ячейка = 4). Переписано разовым `C:\hvchk\fix_uv.py`
+(katana 108 фейсов, knight 84, scythe 132; `null` не осталось), та же правка внесена в
+`D:\visualmod` — UV-формат версионно-нейтрален, код 1.21.4 не тронут.
+
+## Что поменялось в API и как это закрыто
+
+| 1.21.4 | 1.21.11 | где |
+|---|---|---|
+| `render(state, MatrixStack, VertexConsumerProvider, int)` | `render(state, MatrixStack, OrderedRenderCommandQueue, CameraRenderState)` | `ChinaHatMixin`, `CosmeticsAttachMixin`, `LivingEntityRendererMixin` |
+| `renderArm(MatrixStack, VertexConsumerProvider, int, Identifier, ModelPart, boolean)` | `renderArm(MatrixStack, OrderedRenderCommandQueue, int, Identifier, ModelPart, boolean)` | `FirstPersonArmMixin` |
+| `GameRenderer.renderHand(Camera, float, Matrix4f)` | `renderHand(float tickDelta, boolean advance, Matrix4f)` | `GameRendererMixin` |
+| `Camera.update(BlockView, ...)` | `Camera.update(World, ...)` | `VictoryCameraMixin` |
+| `Mouse.mouseClicked(double,double,int)` / `keyPressed(int,int,int)` | `mouseClicked(Click,boolean)` / `keyPressed(KeyInput)` (records) | `ItemScrollerMixin`, `ChatHudEditMixin`, `KeyboardKeyMixin`, `InventoryScreenMixin`, `InventorySearchCharMixin` |
+| `ChatHud.mouseClicked` + `toChatLineX` | удалены; отступ чата — `translate(gutter, 0f)` после единственного `pushMatrix()` в `render(DrawContext, TextRenderer, IIIZZ)` (матрица снимается ванильным `popMatrix()`) | `ChatPlusMixin` |
+| `GameProfile.getId/getName/getProperties()` | record-аксессоры `id()/name()/properties()` (authlib 7.0.61) | `PlayerBadgeMixin`, `PlayerListBadgeMixin`, `KillFrame`, `FakePlayer`, `Friends`, `NameProtectUtil`, `NametagUtil`, `TabSelf` |
+| `pack.mcmeta`: `pack_format` + `supported_formats{1..9999}` | `min_format:[75,0]` + `max_format:9999`, без `pack_format` | `RuntimePacks.writeMcmeta` |
+| `lines()` = `POSITION_COLOR_NORMAL` | `POSITION_COLOR_NORMAL_LINE_WIDTH`, у вершины обязателен `.lineWidth(float)` | `WorldRenderUtil.line` |
+| `"uv": [null, v, u, null]` (сломанный формат) | только 4 числа: `[u2-4, v1, u2, v1+4]` — ячейка атласа | `models/item/{katana,knight,scythe}.json` |
+
+Рисование в обход очереди идёт через `queue.submitCustom(MatrixStack, RenderLayer, (Entry, VertexConsumer) -> ...)`.
+Очередь копирует матрицу в момент `submit`, поэтому отложенная команда рисует в том же базисе,
+что и сиюминутная — поза/приседание/поворот тела не теряются.
+
+Hotspot чата не сломан: `ChatHud$Interactable.calculateUntransformedOffset()` берёт
+`DrawContext.getMatrices()`, инвертирует её и переводит курсор в координаты строки, то есть
+наш `translate(gutter, 0f)` ванильный hover/учёт клика учитывают сами.
+
+## Что подтвердилось, но требует проверки в игре
+
+1. **Нижний (мировой) слой косметики** по-прежнему рисует в `mc.getBufferBuilders().getEntityVertexConsumers()`
+   и вызывает `Immediate.draw(LAYER)`. Методы живы и компилируются, но в 1.21.11 сущности уходят
+   в очередь команд — совпадёт ли порядок композитинга с 1.21.4, видно только в рантайме.
+2. **Слои `debugQuads` / `debugFilledBox`** под новой очередью: у ChinaHat и прикрепляемой косметики
+   нет ли дыр/артефактов глубины (в 1.21.4 это подбиралось polygon-offset).
+3. **Стеклянная рука**: подмена потребителя внутри `submitCustom` вместо обёртки провайдера.
+   `GlassItem.wrap(VertexConsumerProvider)` теперь используется только для предметов
+   (`ItemGlassRenderMixin`); для руки — новый механизм.
+4. **@ModifyConstant лимита чата (100)**: литерал проверен по байткоду — `bipush 100` есть и в
+   `addMessage(ChatHudLine)`, и в `addVisibleMessage(ChatHudLine)`; в игре остаётся убедиться,
+   что история растёт дальше 100 строк.
+5. **Встроенные ресурспаки**: после правки формата в логе не должно быть
+   `Couldn't load file/HolyVisuals... pack metadata`; сами паки должны появиться в списке
+   ресурспаков и красить мечи/щиты/тотемы/стекло/текстуры.
+6. **Линейные эффекты мира** (CombatPulse, Prediction, HolyItems, RespawnFx): после `.lineWidth`
+   в логе не должно быть `Missing elements in vertex: LineWidth`; контуры и кольца видимы,
+   толщина 1 px.
+7. **Модели katana/knight/scythe**: в логе не должно быть `Failed to load model visualmod:models/item/...`;
+   UV должны попадать в свои ячейки атласа (клинок/кромка/гарда/рукоять/древко/самоцвет), без
+   растянутых или чужих фрагментов.
+
+## Известные отличия, которые правятся только в рантайме
+
+- `require = 0` на всех спорных хуках: если таргет всё же не соберётся, мода не крашит,
+  а функция молча не работает. Симптом-чек: `Diag.once(...)` в этих местах.
+
+## Волна 2 (2026-10-28): ивенты, табличка, перчатки, вход в мир
+
+Перенесено из 1.21.4 без изменения логики, различия только в API версии:
+
+| Что | 1.21.4 | 1.21.11 |
+|---|---|---|
+| Экран ивентов, анимация | `ctx.getMatrices().push()/translate(x,y,z)/scale(x,y,z)/pop()` | `pushMatrix()/popMatrix()`, `translate(x,y)` и `scale(x,y)` (Matrix3x2fStack, без z) |
+| Клик по карточке | `mouseClicked(double,double,int)` | `mouseClicked(Click click, boolean doubled)`, координаты через `click.x()/y()/button()` |
+| Звук нового ивента | `PositionedSoundInstance.master(...)` | `PositionedSoundInstance.ui(...)` |
+| Масштаб кости косметики | `part.rotate(s)` + ручной `s.scale(xScale,yScale,zScale)` | не нужно: `part.applyTransform(s)` сам применяет origin/rotation/scale |
+
+`WorldFade` (проявление картинки из черноты ~1 с после захода в мир) и обновлённый
+`EventNotification` компилируются офлайн-гейтом (`javac -proc:none` по cp11.txt/srcs11.txt),
+аудит миксинов — без новых замечаний.
+
+## Волна 3 (2026-10-31): SlotsSwitch, копьё, вьюмодель на каждый меч, удаление VersionImitation
+
+**SlotsSwitch (UTIL).** Два новых ряда «Key 1»/«Key 2» ловят нажатие так же, как ряд бинда
+(`KeySetting` + захват в `ClickGUI`, ESC — отмена, Del/Backspace — очистить). При включении
+модуля все бинды, сидящие на этих клавишах, обменены местами прямо в `mc.options.allKeys`
+(затрагивает и хотбар, и debug-клавиши — `allKeys` собирается из `mainKeys` + `hotbarKeys` +
+`debugKeys`), при выключении возвращаются байт в байт по журналу
+`visualmod_configs/slots_switch.json`. Синхронизация идёт не только через `onEnable/onDisable`,
+но и по `END_CLIENT_TICK`: `setEnabled()` из конфига колбэки не зовёт, а смена клавиш на лету
+вообще ничем не сигнализируется. Если игра закрылась с обменом (краш, Alt+F4), журнал чинит
+настройки управления на первом тике даже при выключенном модуле.
+
+**Вьюмодель.** `ViewModelStore` переведён со `Kind` на строковые ключи: базовые (`sword`,
+`spear`, …) плюс стилевые `sword_<стиль CustomSword>`. Стилевой профиль рождается копией
+**текущего** общего профиля меча, поэтому при первом движении слайдера меч не подпрыгивает
+к ванильным значениям, а общий профиль продолжает влиять на стили, у которых своих значений
+ещё нет. Чип «Общий / Katana / …» под вкладкой меча, зелёная точка — у стиля есть своё;
+вкладка копья появляется как обычный `Kind.SPEAR`.
+
+**Что проверять в игре (новые пункты).**
+8. **SlotsSwitch**: выбрать E и 2, включить — в «Настройках управления» строки «Инвентарь»
+   и «Слот хотбара 2» поменялись биндами: E теперь выбирает слот 2, а «2» открывает инвентарь.
+   Выключить — всё вернулось, журнал `slots_switch.json` удалён. Тот же тест с «1 → ЛКМ».
+9. **Копьё**: на сервере HW (пак с `*_spear`) вкладка SPEAR двигает копьё; на трезубце из
+   ваниля — нет (матч идёт по `ITEM_MODEL`, путь должен содержать «spear»). Копьё при этом
+   не считается клинком: ауры/морф/жар на нём не рисуются (`matchBlade`).
+10. **Пер-стиль**: настроить общий меч, выбрать чип DAGGER, сдвинуть Scale — катана не
+    дёрнулась; RESET на чипе вернул даггер к общему профилю; после перезапуска значения
+    обоих профилей остались раздельными (`viewmodel.json` содержит ключи `sword` и `sword_dagger`).
+
+**VersionImitation удалён** (просьба пользователя): `VersionImitation`, `VersionAdvice`,
+`ViaBridge`, `VersionImitationScreen`, `HandshakeMixin`, `VersionAdviceMixin` — файлов и строк
+в `visualmod.mixins.json` больше нет, в окне «Сетевая игра» осталась одна кнопка «Записи».
+`VersionTexturePacks` переименован в `PackFolder`: от него остались только `dir()`/`ensureDir()`
+для каталога `<gamedir>/textures`, который регистрирует `ResourcePackManagerMixin`.
+
+Гейт после волны: javac — 0 ошибок (433 файла), аудит — 148 хуков, 1 ложная запись `NOJAVAP`.
+
+## Волна 4 (2026-10-31): feature control, SlotsSwitch-пары, косметика-кнопка, TNT, InterfaceHUD
+
+**Feature Control (`api/LiteApi.java`) — все 8 пунктов ревью.** Отправка — сырые UTF-8 байты
+JSON: `Data.write` больше не использует `writeByteArray()` (VarInt-длина ломала разбор на сервере),
+`Data.read` берёт остаток пакета, а не `readByteArray`. Клиент fail-closed: с входа на внешний
+сервер `applyLiteBlocklist(null)` скрывает всё, что можно скрыть, и таймаут 5 с блокировку не
+снимает. После таймаута идёт повтор с бэкоффом 11 с → 60 с; лимит частоты переживает disconnect
+(`nextSendAt` не сбрасывается). Ответ принимается только если есть `id` и `method` (`handle:199`),
+`id` совпадает с нашим неотвеченным запросом, `ok == true` и `payload.blocklist` — массив строк
+без пустых элементов (`readBlocklist:252`; иначе ответ не применяется, список не обнуляется).
+Push-обновление: сообщение с `payload.blocklist`, но не `checkFeatures`, применяется сразу
+(`handle:237`). Если сервер за 3 попытки не ответил и канал `liteapi:feature-control` не объявлен,
+считаем, что протоколом он не владеет — контроль не применяется (`noControl`). При блокировке
+модуля его панель настроек закрывается: `ClickGUI:237` сбрасывает `settingsModule`, если модуль
+стал скрытым.
+
+**SlotsSwitch — пары «источник → назначение».** До 4 пар, каждая — два ряда `KeySetting`
+(«Откуда N»/«Куда N»), захват клавиши как у бинда. `applyPairs:118` меняет местами все бинды,
+сидящие на этих клавишах (хотбар и debug тоже, `allKeys`), откат — `revert:167` по журналу
+`visualmod_configs/slots_switch.json`; журнал чинит настройки управления и после краша.
+Клавиши пустые или одинаковые — пара пропускается. Сами слоты не трогаем: меняется только
+привязка клавиш.
+
+**Косметика: одна кнопка.** Модулей-«плащ/шапка/броня» по размеру модуля в GUI больше нет: для
+категории COSMETICS рисуется кнопка «Косметика» (`ClickGUI.drawCosmeticsButton:577`), в колонках —
+карточка «Меню косметики» (`ClickGUI:732`). Всё наполнение (cape/hat/armor-секции) живёт в
+`CosmeticsScreen`; в `ModuleManager` остались только модули с отдельными функциями (CustomTotem,
+CustomShield, CustomWings, ChinaHat, CustomArmor и т. п.).
+
+**GlassItem: прозрачные мечи.** Причина была в namespaces: пак перекрашивает
+`textures/item/*.png` только неймспейсов `minecraft` + `visualmod` (`GlassPack:44`) — без второго
+клиночные атласы мода оставались непрозрачными. Вторая часть: после перекраски клинка
+(`weapon/BladeSkinLink.java:62`) вызываются `GlassPack.rebuildOverSkins():167`, иначе прозрачный
+слой лежал поверх старой стрип-текстуры.
+
+**HWCoin — встроенная функция.** Модуля нет: чип койнов рисуется из
+`mixin/HWCoinChipMixin` (TAIL `HandledScreen.render`) и не показывается ни в ModuleManager, ни в
+GUI. Условия: заголовок контейнера содержит «аукци/лот/торг/bid/auction/shop/магазин», в имени или
+lore предмета не меньше 5 цифр. Курс — `Endpoints.COINS?limit=5`, кэш 60 с, тред `hwc-coin`.
+
+**TNT: таймер, радиус, предупреждение.** Ядро — `util/TntWatch`: фитиль читается из
+`TntEntity.getFuse()`, а радиус выучивается из `ExplosionS2CPacket`
+(`mixin/ClientPlayNetworkHandlerMixin:72`), матчинг взрыва с наблюдением ≤3.5 блока, TTL 2 с.
+Кастомный динамит опознаётся по translation key / имени сущности (хинты `tnt`, `динамит`,
+`dynamite`, `бомба`, `взрыв`; minecart/лодка — в чёрном списке), невыученный фитиль считается от
+`age` + `fuseByKind`. Выученное складывается в `visualmod_configs/tnt_watch.json`
+(`{"radius":{kind:n},"fuse":{kind:ticks}}`). `TntTimer` показывает `%.2fs` над сущностью
+(до 64 блоков), `TntRadius` берёт радиус из `TntWatch.radiusFor()` — то есть и у кастомного TNT.
+Новая встроенная функция `util/TntWarning`: плашка с миниатюрой TNT и `%.1fs` над хотбаром
+(`y = height-42`, радиус 20 блоков, пульс 2/3.5/6 Гц), рисуется из TAIL-инъекции в
+`InGameHud.render`, настроек не имеет.
+
+**RGB.** Перед полем Bind появился чип «rgb» (`ClickGUI.drawRgbChip:880`): радужный акцент модуля
+в GUI и в HUD (`util/Rgb`, цикл 6 с, насыщенность 0.72), состояние — набор имён модулей в
+`visualmod_configs/rgb.json`. Скорость/фазу не настраиваем.
+
+**PotionStatus.** Ванильный столбик иконок эффектов больше не рисуется:
+`mixin/StatusBarHideMixin` отменяет `InGameHud.renderStatusEffectOverlay`, пока модуль включён.
+Остаются свои иконки (атлас `textures/mob_effect/<имя>.png`, заглушка
+`visualmod:textures/hud/missing.png`) и настройки «Accent Color»/«Fill Style».
+
+**HolyItems: счётчик до конца эффекта.** Модуль сам ведёт список применений и рисует таймер
+билбордом в точке применения (центр блока, сдвинутый вверх на полблока). Каналов четыре: своя рука
+(`ClientPlayerInteractionManagerMixin.interactItem`/`interactBlock` → `HolyItems.onLocalUse`),
+чужая рука (уменьшение става при том же предмете либо `handSwinging` у последнего става),
+именованные сущности, выброшенные предметы (по умолчанию выключены, только лог). Дедуп: тот же
+предмет, <3 блоков, <1500 мс. Длительность: `durationSec` в конфиге `holy_items.json` (0 = глобальный
+слайдер «Effect Seconds», по умолчанию 15 с) — настоящих значений сервера мы не знаем.
+
+**InterfaceHUD вобрал GamemodeDisplay, ArrayList и PacketMeter.** Модулей больше нет (файлы удалены,
+регистрации в `ModuleManager` сняты), вместо них части: «Gamemode» (иконка `eye`, режим + опция
+«Gamemode Abilities»), «ArrayList» (иконка `list`, число включённых модулей + выпадающий список),
+а чип «Packets» теперь показывает `N п/с ±jitter ≈loss%` и краснеет при зависании потока. Ядро
+счётчика — `util/PacketStats`, панель списка — `util/ModuleList` (чип рисуется общим потоком
+InterfaceHUD, панель привязана к его замеренному прямоугольнику и масштабируется вместе с HUD).
+Кнопки обеих новых частей по умолчанию выключены, включаются в настройках InterfaceHUD.
+
+**Что проверять в игре (новые пункты).**
+11. **Feature control**: заход на HW — в GUI баннер «⏳ Сервер проверяет права», скрытые модули
+    не включаются ни биндом, ни конфигом; после ответа `[LiteAPI] Ответ принят, скрыто модулей: N`.
+    Быстрый reconnect (менее 11 с) не должен порождать второй запрос. На сервере без протокола —
+    ровно 3 таймаута и `[LiteAPI] Сервер не объявил канал … контроль функций не применяется`,
+    после чего всё возвращается. Ответ без `payload.blocklist` ничего не разблокирует.
+12. **SlotsSwitch**: задать пару «E → 2», включить — в «Настройках управления» бинды
+    поменялись, выключить — вернулись байт в байт, `slots_switch.json` очищен. Вторая/третья пары
+    работают независимо.
+13. **Косметика**: в GUI категория COSMETICS — одна кнопка, открывает меню; плащ/шапка/броня
+    настраиваются там, в списке модулей лишних строк нет.
+14. **GlassItem**: меч со включённой BladeSkin-перекраской становится прозрачным (и сразу после
+    смены цвета клинка); руки — отдельная галка.
+15. **HWCoin**: на аукционе/в магазине чип койнов внизу экрана, в обычном сундуке — нет.
+16. **TNT**: поджечь ванильный TNT и кастомный динамит; прислать строки
+    `[VisualsMod] TntWatch: …` и содержимое `visualmod_configs/tnt_watch.json` — по ним видно, чем
+    HW представляет кастомный динамит и выучились ли фитиль/радиус. Таймер и сфера должны
+    появляться у обоих.
+17. **TNTWarning**: динамит в ≤20 блоков — значок над хотбаром с обратным отсчётом; дальше 20 — пусто.
+18. **RGB**: чип «rgb» перед Bind у любого модуля; после перезапуска состояние сохранено
+    (`rgb.json`), акцент мигает и в GUI, и в HUD-панели модуля.
+19. **PotionStatus**: ванильный столбик иконок исчез только при включённом модуле; при выключенном
+    возвращается.
+20. **HolyItems**: включить модуль, применить стан/трапку/взрывную трапку на HW и прислать строки
+    `[VisualsMod] HolyItems: …` — по ним видно, какой канал реально сработал (своя рука / чужая
+    рука / сущность / дроп) и какие имена предметов отдаёт сервер.
+21. **InterfaceHUD**: части «Gamemode» и «ArrayList» включаются в настройках, таскаются по
+    отдельности (Ctrl+перетаскивание), чип «ArrayList» по клику закрепляет список, клик по строке
+    открывает ClickGUI на модуле, колесо скроллит список; чип «Packets» краснеет при зависании.
+    Старые модули из конфига исчезли — если они были включены, их функции теперь дают эти части.
+
+Гейт после волны: javac — 0 ошибок (436 файла), аудит — 153 хука, 1 ложная запись `NOJAVAP`.
+
+### Добор к волне 4: язык, кодировка, отдача
+
+**18 модулей были без русских строк.** Проверка по дереву (`registered=140`, `with_super=139`,
+`lang_entries=140`) дала 18 ключей, которых нет в `Lang`: `AirCut`, `BackSword`, `ChannelLink`,
+`ClashSparks`, `CosmeticReaction`, `CritHeat`, `CritStar`, `DeathWaypoint`, `DuelBoard`, `DuelRing`,
+`ExecuteMark`, `Finisher`, `MaceSlam`, `PortalCinema`, `ReachGhost`, `ServerProfiles`, `SparksTrail`,
+`StrikeRune`. В RU-режиме `Lang.name()` для них возвращает английский ключ, поэтому в GUI они и
+писались латиницей. Дописаны `put(...)`-пары (блок `Lang` заканчивается ими, порядок внутри блока
+общую сортировку нарушает — правится одним движением, если мешает). Названия подбирались по
+английскому описанию из `super(...)`: «Разрез воздуха», «Меч за спиной», «Канал энергии»,
+«Искры блока», «Реакция косметики», «Нагрев от критов», «Звезда крита», «Метка смерти»,
+«Табло дуэли», «Круг дуэли», «Метка добивания», «Добивание», «Удар махи», «Кинопортал»,
+«Призрак дистанции», «Профили серверов», «Искры по взмаху», «Руна удара». Ключи конфиков,
+`HudPosition` и `HudIcons` не затронуты — они привязаны к английскому имени.
+
+**Кодировка сборки.** В `build.gradle` нигде не задавался `options.encoding`, то есть javac брал
+кодировку ОС; на JDK 21 это UTF-8 и русские строки в jar живые, но на сборке со старым JDK или
+другой локалью весь `Lang` превратился бы в кракозябры. Добавлено
+`tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }`, офлайн-гейт теперь тоже
+прогоняется с `-encoding UTF-8`.
+
+**Два факта про дерево, которые всплыли при сборке архивов.**
+- `def mcVersion = (findProperty('mc') ?: '1.21.4')` — в этом дереве дефолт всё ещё `1.21.4`,
+  хотя исходники требуют yarn `1.21.11+build.6`. Собирать надо явно: `gradlew remapJar -Pmc=1.21.11`
+  (это же написано в README отдаваемого архива). Дефолт не менялся — решение за тобой.
+- `src/main/java/resources/` (14 json копий `*_spear` из `assets/minecraft`) в сборку не попадает:
+  `sourceSets.main.resources` смотрит в `src/main/resources`, а там этих файлов нет. Каталог
+  датирован 2026-10-02 и к этой волне отношения не имеет, из архивов исключён, в дереве не тронут.
+
+**Отдача волны 4** (оба архива пересобраны после правок `Lang` и `build.gradle`):
+`C:\work\HolyVisuals-1.21.11-src-full.zip` — полное дерево с `PORT-1.21.11.md` внутри,
+`C:\work\HolyVisuals-1.21.11-github.zip` — для публичного репозитория: корень без обёртки,
+сгенерированный из исходников `README.md` (139 модулей по категориям + встроенные функции),
+`.gitignore`, `gradle/wrapper/gradle-wrapper.jar`, без `*.class`, без `PORT-1.21.11.md`,
+рантайм-скрипты `assets/visualmod/browser/*.ps1` оставлены.
+
+### Краш входа в мир (лог 20:59): `CallbackInfo` вместо `CallbackInfoReturnable`
+
+`disconnect-2026-10-31_20.59.02-client.txt`: `Mixin transformation of net.minecraft.class_636 failed`,
+ниже — `InvalidInjectionException ... @Inject::visuals$useItem(...CallbackInfo)V! CallbackInfoReturnable
+is required!`. `class_636` = `ClientPlayerInteractionManager`, а грузится он на пакете
+`clientbound/minecraft:login` — поэтому не пускало и в одиночную, и в сервер: мод падал ещё до
+появления мира, а не на конкретном сервере.
+
+Виновник — новые `@Inject` от HolyItems в `ClientPlayerInteractionManagerMixin`. По merged-джару
+1.21.11 (`javap net.minecraft.client.network.ClientPlayerInteractionManager`):
+- `interactItem(PlayerEntity, Hand)` → возвращает `ActionResult`,
+- `interactBlock(ClientPlayerEntity, Hand, BlockHitResult)` → тоже `ActionResult`,
+- `attackEntity(PlayerEntity, Entity)` → `void`.
+
+Значит у первых двух хэндлеров обязан быть `CallbackInfoReturnable<ActionResult>`, а у `hit()` —
+обычный `CallbackInfo`. Оба написаны с `CallbackInfo`; Mixin валидирует это на фазе APPLY и
+останавливается на первом невалидном инжекте, поэтому в логе видна только `useItem`, хотя
+`useOnBlock` был сломан identично. `require = 0` от этого не защищает: он разрешает «таргет не
+найден», а не «таргет найден, но хэндлер ему не подходит».
+
+Правка: оба хэндлера переведены на `CallbackInfoReturnable<net.minecraft.util.ActionResult>`
+(+ импорт), логика `HolyItems.onLocalUse(hand)` не тронута. Проверка по всему дереву аудитом
+ничего больше не нашла.
+
+**Дырка в гейте, закрыта.** Прежний `check_inject` сверял только состав и порядок аргументов цели,
+а тип `Callback`/`CallbackInfoReturnable` считал деталями стиля — и пропускал. Добавлены проверки
+`CB-RET` (цель нет-void, хэндлер берёт `CallbackInfo`) и `CB-VOID` (цель `void`, хэндлер берёт
+`CallbackInfoReturnable`). Самопроверка: копия дерева с прежним сломанным файлом даёт ровно
+`CB-RET ... :50` и `CB-RET ... :57` (`hooks=153 problems=3`, третья — обычная ложная `NOJAVAP`).
+Рабочее дерево после правки: **javac 0 ошибок (436 файла), аудит 153 хука / 1 ложная запись**.
+Оба архива пересобраны с фиксом (21:06).
+

@@ -1,0 +1,44 @@
+{
+  "items": [
+    {
+      "id": "survey_corps",
+      "base": "#5A6B44",
+      "trim": "#B5945A",
+      "emblem": "wings",
+      "emblemColor": "#EDE0B8",
+      "length": 20.0
+    },
+    {
+      "id": "bleach_haori",
+      "base": "#EAE7DC",
+      "trim": "#1C1C1C",
+      "emblem": "diamond",
+      "emblemColor": "#EEEEEE",
+      "length": 16.5
+    },
+    {
+      "id": "alchemist",
+      "base": "#A8362A",
+      "trim": "#5E1A12",
+      "emblem": "cross",
+      "emblemColor": "#FFD700",
+      "length": 21.0
+    },
+    {
+      "id": "royal_guard",
+      "base": "#243252",
+      "trim": "#D4AF37",
+      "emblem": "shield",
+      "emblemColor": "#F0D464",
+      "length": 23.0
+    },
+    {
+      "id": "shadow_realm",
+      "base": "#16161F",
+      "trim": "#2C2C2C",
+      "emblem": "moon",
+      "emblemColor": "#9A6FE8",
+      "length": 24.0
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "akron": { "sounds": ["visualmod:akron"] },
+  "akroff": { "sounds": ["visualmod:akroff"] },
+  "bell": { "sounds": ["visualmod:bell"] },
+  "bonk": { "sounds": ["visualmod:bonk"] },
+  "bubble": { "sounds": ["visualmod:bubble"] },
+  "celon": { "sounds": ["visualmod:celon"] },
+  "celoff": { "sounds": ["visualmod:celoff"] },
+  "disableold": { "sounds": ["visualmod:disableold"] },
+  "enableold": { "sounds": ["visualmod:enableold"] },
+  "metallic": { "sounds": ["visualmod:metallic"] },
+  "nuron": { "sounds": ["visualmod:nuron"] },
+  "nuroff": { "sounds": ["visualmod:nuroff"] },
+  "rezero_return": { "sounds": ["visualmod:rezero_return"] },
+  "victory_subaru": { "sounds": ["visualmod:victory_subaru"] },
+  "victory_winning": { "sounds": ["visualmod:victory_winning"] },
+  "victory_melodiya": { "sounds": ["visualmod:victory_melodiya"] },
+  "victory_epic": { "sounds": ["visualmod:victory_epic"] }
+}

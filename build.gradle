@@ -1,0 +1,286 @@
+plugins {
+    id 'fabric-loom' version '1.17.21'
+    id 'maven-publish'
+}
+
+group = 'com.visualmod'
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://mvn.tdlight.io/public/' }   // был нужен пакету telegram-бота; сейчас ни одна зависимость отсюда не тянется — строку можно удалять
+}
+
+// ============================================================================
+//  ВЕРСИЯ ИГРЫ, ПОД КОТОРУЮ СОБИРАЕТСЯ JAR
+//
+//  Один jar на две версии игры сделать нельзя: loom зашивает в классы и в
+//  рефмап intermediary-имена конкретной версии, а Fabric Loader отвергает мод,
+//  у которого depends.minecraft не совпадает с игрой. Поэтому версия — это
+//  параметр сборки, а не проверка внутри мода:
+//      gradlew build                          -> 1.21.4 (классический visualsmod.jar)
+//      gradlew build -Pmc=1.21.11             -> visualsmod-1.21.11.jar
+//  Профиль (yarn / loader / fabric api) берётся из MC_PROFILES ниже; любой
+//  элемент можно переопределить отдельно: -Pyarn=... -Ploader=... -Papi=...
+//  Значения по умолчанию ровно те, что были вписаны руками до этой правки.
+// ============================================================================
+def MC_PROFILES = [
+        '1.21.4' : [yarn: '1.21.4+build.8', loader: '0.16.10', api: '0.119.2+1.21.4'],
+        '1.21.11': [yarn: '1.21.11+build.6', loader: '0.20.1', api: '0.141.6+1.21.11'],
+]
+def mcVersion = (findProperty('mc') ?: '1.21.4').toString()
+def mcProfile = MC_PROFILES[mcVersion]
+def yarnVersion = (findProperty('yarn') ?: mcProfile?.yarn)?.toString()
+def loaderVersion = (findProperty('loader') ?: mcProfile?.loader)?.toString()
+def apiVersion = (findProperty('api') ?: mcProfile?.api)?.toString()
+if (!yarnVersion || !loaderVersion || !apiVersion) {
+    throw new GradleException("HV: профиль для игры ${mcVersion} не задан. Известны: ${MC_PROFILES.keySet()}, " +
+            'или укажи явно: -Pyarn=<сборка> -Ploader=<версия> -Papi=<версия>')
+}
+// Имя jar'а: классический остаётся visualsmod.jar, остальные версии — с суффиксом,
+// чтобы два сборки не затирали друг друга в build/libs.
+base.archivesName = 'visualsmod' + (mcVersion == '1.21.4' ? '' : '-' + mcVersion)
+
+println "HV: сборка под Minecraft ${mcVersion} (yarn ${yarnVersion}, loader ${loaderVersion}, fabric-api ${apiVersion})"
+
+loom {
+    mods {
+        "visualsmod" {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${mcVersion}"
+    mappings "net.fabricmc:yarn:${yarnVersion}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${loaderVersion}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${apiVersion}"
+}
+
+processResources {
+    inputs.property "version", project.version
+    inputs.property "mcVersion", mcVersion
+    filteringCharset "UTF-8"
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version, "mcVersion": mcVersion
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+jar {
+    inputs.property "archivesName", project.base.archivesName
+    from("LICENSE") {
+        rename { "${it}_${project.base.archivesName}" }
+    }
+}
+
+// ============================================================================
+//  КАНАЛ СБОРКИ (beta / release)
+//    gradlew build                     -> бета (по умолчанию)
+//    gradlew build -Pchannel=release   -> релиз
+//  Канал кладётся в маркер и уезжает серверу при проверке ключа (LockScreen:
+//  поле "channel"), поэтому ключ от беты на релизной сборке не проходит.
+// ============================================================================
+def buildChannel = (findProperty('channel') ?: 'beta').toString()
+def channelDir = layout.buildDirectory.dir('generated/channel')
+
+tasks.register('genChannel') {
+    outputs.dir(channelDir)
+    inputs.property('channel', buildChannel)
+    doLast {
+        def f = channelDir.get().file('build-channel.txt').asFile
+        f.parentFile.mkdirs()
+        f.text = buildChannel
+    }
+}
+sourceSets.main.resources.srcDir(channelDir)
+tasks.named('processResources') { dependsOn 'genChannel' }
+
+// ============================================================================
+//  ЗАЩИТА СБОРКИ (HOLY_ADMIN_TOKEN)
+//
+//  Мод собирается только с ключом администратора в переменной окружения:
+//      PowerShell:  $env:HOLY_ADMIN_TOKEN="...";  gradlew build
+//  Сборка падает с "HV: ...", если ключа нет, сервер ответил 401/403, или до
+//  воркера не удалось достучаться (проверка онлайн, офлайн-кэя нет).
+//  Сам ключ в файлы и в jar НЕ попадает: в сборку кладётся только его дайджест
+//  (build/generated/hv), а мода при запуске сверяет маркер и крашится, если
+//  маркер не подлинный или удалён (см. com.visualmod.hv.kit.HvIntegrity).
+//  Для локальной компиляции без ключа: gradlew compileJava -PhvSkipAuth=1
+//  (такой jar помечен "DEV" и у игроков не запустится).
+// ============================================================================
+def hvSalt = 'hv-build-1'
+def hvSkipAuth = project.hasProperty('hvSkipAuth')
+def hvJavaOut = layout.buildDirectory.dir('generated/hv/java')
+def hvResOut = layout.buildDirectory.dir('generated/hv/resources')
+
+def hvSha256 = { String s ->
+    def d = java.security.MessageDigest.getInstance('SHA-256')
+    d.digest(s.getBytes('UTF-8')).collect { String.format('%02x', it) }.join('')
+}
+/** Маркер в jar: его же пересчитывает мода при запуске — меняется вместе с ключом. */
+def hvAnchor = { String ref, String stamp -> hvSha256(ref + '|' + stamp + '|' + hvSalt) }
+
+def hvVerifyOnline = { String token ->
+    String base = (findProperty('holyWorkerUrl') ?: 'https://visualmod-auth-system2.2011shakurov.workers.dev').toString()
+    String endpoint = base + '/api/admin/build'
+    HttpURLConnection c = (HttpURLConnection) new URL(endpoint).openConnection()
+    c.requestMethod = 'POST'
+    c.doOutput = true
+    c.connectTimeout = 8000
+    c.readTimeout = 8000
+    c.setRequestProperty('Authorization', 'Bearer ' + token)
+    c.setRequestProperty('Content-Type', 'application/json; charset=UTF-8')
+    c.outputStream.withCloseable { it.write('{}'.bytes) }
+    int code = c.responseCode
+    // 401/403 — ключ не тот. 404/405 — ключ принят, но роута в воркере ещё нет.
+    if (code == 401 || code == 403) {
+        throw new GradleException('HV: введи ключ для сборки мода — сервер отверг HOLY_ADMIN_TOKEN (401).')
+    }
+    println "HV: сервер принял ключ сборки (HTTP ${code})"
+}
+
+tasks.register('genHvSignature') {
+    group = 'holy'
+    description = 'Проверяет HOLY_ADMIN_TOKEN и кладёт в сборку маркер подлинности'
+    outputs.dir(hvJavaOut)
+    outputs.dir(hvResOut)
+    outputs.upToDateWhen { false }        // перепроверять ключ при каждой сборке
+    doLast {
+        String ref, stamp = System.currentTimeMillis().toString(), note
+        if (hvSkipAuth) {
+            ref = 'DEV'
+            note = 'DEV-сборка: jar с таким маркером у игроков не запустится'
+        } else {
+            String token = System.getenv('HOLY_ADMIN_TOKEN')
+            if (!token || token.trim().isEmpty()) {
+                throw new GradleException(
+                        'HV: введи ключ для сборки мода.\n' +
+                        '  PowerShell: $env:HOLY_ADMIN_TOKEN="твой_ключ"; gradlew build\n' +
+                        '  Только проверить компиляцию без ключа: gradlew compileJava -PhvSkipAuth=1')
+            }
+            ref = hvSha256(token.trim() + '|' + buildChannel + '|' + hvSalt)
+            hvVerifyOnline(token)
+            note = 'ключ принят, канал: ' + buildChannel
+        }
+        def j = hvJavaOut.get().file('com/visualmod/hv/kit/HvMarker.java').asFile
+        j.parentFile.mkdirs()
+        j.text = """package com.visualmod.hv.kit;
+
+/** Генерируется Gradle-задачей genHvSignature. Не править вручную. */
+public final class HvMarker {
+    public static final String REF = "${ref}";
+    public static final String STAMP = "${stamp}";
+
+    private HvMarker() {}
+}
+"""
+        def r = hvResOut.get().file('hv-auth.bin').asFile
+        r.parentFile.mkdirs()
+        r.text = hvAnchor(ref, stamp) + '\n' + stamp + '\n' + buildChannel + '\n'
+        println "HV: маркер подлинности записан (${note})"
+    }
+}
+sourceSets.main.java.srcDir(hvJavaOut)
+sourceSets.main.resources.srcDir(hvResOut)
+// Русские строки в исходниках: без явной кодировки javac берёт кодировку ОС и в jar едет кракозябра.
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+tasks.named('compileJava') { dependsOn 'genHvSignature' }
+tasks.named('processResources') { dependsOn 'genHvSignature' }
+
+// ============================================================================
+//  ЗАГРУЗКА СБОРКИ В CLOUDFLARE (KV)
+//
+//  Адрес воркера берётся отсюда (можно переопределить в gradle.properties: holyWorkerUrl=https://...):
+// ============================================================================
+def holyWorkerUrl = (findProperty('holyWorkerUrl') ?: 'https://visualmod-auth-system2.2011shakurov.workers.dev').toString()
+
+/** Находит самый свежий jar мода в build/libs (без -sources и -dev). */
+def findLatestJar = {
+    def jars = fileTree("${layout.buildDirectory.get().asFile}/libs").matching {
+        include '*.jar'; exclude '*-sources.jar', '*-dev.jar'
+    }.files.sort { -it.lastModified() }
+    return jars.isEmpty() ? null : jars.first()
+}
+
+/** Сама загрузка. Бросает исключение с понятным текстом, если что-то не так. */
+def doUpload = {
+    String token = System.getenv('HOLY_ADMIN_TOKEN')
+    if (!token) {
+        throw new GradleException('Не задана переменная окружения HOLY_ADMIN_TOKEN (это ADMIN_TOKEN вашего воркера). ' +
+                'PowerShell: setx HOLY_ADMIN_TOKEN "ваш_токен" — затем ПОЛНОСТЬЮ закройте и снова откройте IDE/терминал.')
+    }
+    File jar = findLatestJar()
+    if (jar == null) throw new GradleException('jar мода не найден в build/libs. Сначала выполните gradlew build.')
+
+    // Адрес собирается из ЧАСТЕЙ и печатается в консоль — сразу видно, куда уходит файл
+    String channel = (buildChannel == 'release') ? 'release' : 'beta'
+    String endpoint = holyWorkerUrl + '/api/admin/upload?channel=' + channel +
+            '&name=' + URLEncoder.encode(jar.name, 'UTF-8') +
+            (findProperty('notify') == '0' ? '&notify=0' : '')
+    println "Загрузка ${jar.name} (${jar.length()} байт) -> ${endpoint}"
+
+    int attempts = 3
+    for (int attempt = 1; attempt <= attempts; attempt++) {
+        try {
+            HttpURLConnection conn = (HttpURLConnection) new URL(endpoint).openConnection()
+            conn.requestMethod = 'POST'
+            conn.doOutput = true
+            conn.setConnectTimeout(60000)
+            conn.setReadTimeout(180000)
+            conn.setRequestProperty('Authorization', 'Bearer ' + token)
+            conn.setRequestProperty('Content-Type', 'application/octet-stream')
+            conn.setFixedLengthStreamingMode(jar.length())
+            jar.withInputStream { ins ->
+                conn.outputStream.withCloseable { outs ->
+                    byte[] buffer = new byte[32768]
+                    int n
+                    while ((n = ins.read(buffer)) != -1) outs.write(buffer, 0, n)
+                    outs.flush()
+                }
+            }
+            int code = conn.responseCode
+            String text = (code < 400 ? conn.inputStream : conn.errorStream)?.text ?: ''
+            if (code == 200) {
+                println "✅ Загружено на сервер: ${jar.name}. Ответ: ${text}"
+                return
+            }
+            if (code == 401) throw new GradleException('Сервер ответил 401: токен HOLY_ADMIN_TOKEN не совпадает с ADMIN_TOKEN в воркере.')
+            if (code == 404) throw new GradleException('Сервер ответил 404: проверьте адрес воркера (holyWorkerUrl) и что в нём новый код с /api/admin/upload.')
+            throw new GradleException("HTTP ${code}: ${text}")
+        } catch (GradleException e) {
+            throw e                                   // понятные ошибки не повторяем
+        } catch (IOException e) {
+            if (attempt == attempts) throw new GradleException("Нет связи с сервером после ${attempts} попыток: ${e}")
+            println "Попытка ${attempt} не удалась (${e}). Повтор через ${attempt * 3} с…"
+            Thread.sleep(attempt * 3000L)
+        }
+    }
+}
+
+// Ручная загрузка:  gradlew uploadBeta     (при ошибке падает с понятным сообщением)
+//                   gradlew uploadBeta -Pnotify=0   (загрузить, но не рассылать игрокам)
+tasks.register('uploadBeta') {
+    group = 'holy'
+    description = 'Загружает последний собранный jar в Cloudflare'
+    doLast { doUpload() }
+}
+
+// Автозагрузка после «gradlew build» — только для беты и только если задан HOLY_ADMIN_TOKEN.
+// Ошибка загрузки НЕ роняет сборку (мод уже собран), а печатается предупреждением. Отключить: gradlew build -PnoUpload
+tasks.register('uploadBetaAuto') {
+    onlyIf { buildChannel == 'beta' && System.getenv('HOLY_ADMIN_TOKEN') && !project.hasProperty('noUpload') }
+    doLast {
+        try { doUpload() }
+        catch (Exception e) { println "⚠ Автозагрузка беты не удалась: ${e.message}\n  Повторить вручную: gradlew uploadBeta" }
+    }
+}
+tasks.named('build') { finalizedBy 'uploadBetaAuto' }
