@@ -1,0 +1,26 @@
+.gradle/
+build/
+run/
+out/
+.idea/
+*.iml
+.vscode/
+hs_err_pid*.log
+replay_pid*.log
+*.class
+
+# Всё ниже появляется в корне само и в репозиторий попадать не должно:
+# HV_for_zaKK0/ — отдельный клон того же репозитория (история не связана, пуш из него затрёт main)
+HV_for_zaKK0/
+# vibe_images/ — исходники артов до сжатия, дампы лежат в C:\Users\Public\hv_tex
+vibe_images/
+# Holy-visual info/ — мод создаёт эту папку рядом с игрой сам (см. BrowserMedia.extract)
+Holy-visual info/
+
+# Случайный мусор вокруг исходников: Windows-ярыки и пустые «Новый текстовый документ.txt»,
+# плюс list.txt — вывод задачи «список всех модулей», который когда-то напечатали сюда же.
+# Файлы остались на диске, в репозиторий они больше не попадают.
+*.lnk
+src/main/java/**/list.txt
+src/main/java/**/Новый *.txt
+src/main/java/**/*.java.txt

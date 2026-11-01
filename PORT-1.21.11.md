@@ -721,8 +721,8 @@ BUILD FAILED in 2m 19s
   и `Tab+` висячих ссылок не осталось; `fabric.mod.json` → id `visualsmod`, version `1.5`.
 
 Как собрать:
-1. `./gradlew assemble "-Pmc=1.21.11" --no-daemon` — `--no-daemon` заодно убирает шум от
-   `stopWhenIdle`.
+1. `./gradlew assemble "-Pmc=1.21.11"` — без `--no-daemon` (см. раздел
+   «Фикс2» ниже: именно с `--no-daemon` следующий запуск упёлся в новый краш).
 2. Если `UnrecoverableZipException` повторится — удалить каталог
    `C:\work\vm11\.gradle\loom-cache\minecraftMaven\net\minecraft\minecraft-merged-2ae02fda0f`
    и запустить сборку снова: Loom соберёт merged-джар с нуля (первые 2–4 минуты). Остальной
@@ -731,3 +731,306 @@ BUILD FAILED in 2m 19s
    это оставило битый джар и `.tmp`-осколок.
 
 Код правки не потребовал: дамп изменений этого коммита — только этот раздел.
+
+
+## Фикс2 (2026-11-01): второй краш сборки — это тот же loom-кэш, но стадия ремапа модов
+
+Запуск `./gradlew assemble "-Pmc=1.21.11" --no-daemon` (19:18:44, упал в 19:20:04):
+
+```
+Previous process has disowned the lock due to abrupt termination.
+Found existing cache lock file (ACQUIRED_PREVIOUS_OWNER_DISOWNED), rebuilding loom cache.
+Cannot remap modifiers because it does not exist in any of the targets [] or their parents.
+Cannot remap modifiers because it does not exist in any of the targets [] or their parents.
+> Failed to setup Minecraft, java.lang.RuntimeException: Failed to remap 46 mods
+2: Task failed with an exception.
+Failed to release lock on Build Output Cleanup Cache (C:\work\vm11\.gradle\buildOutputCleanup)
+> Запрошенную операцию нельзя выполнить для файла с открытой пользователем сопоставленной секцией
+BUILD FAILED in 1m 22s
+```
+
+Исходники мода снова ни при чём: офлайн-гейты не менялись и остаются зелёные (javac 0 ошибок
+/ 435 файлов, `audit2.py` — 152 хука и 1 ложная `NOJAVAP` по joml). Совет `--no-daemon` из
+«Фикс1» оказался неверным — именно с этим флагом краш и случился, шаг 1 там исправлен.
+
+### Что значит каждая строка (проверено по исходникам Loom 1.17.21 и tiny-remapper 0.14.0)
+
+- `Failed to remap 46 mods` — обёртка из `ModProcessor.processMods` (`ModProcessor.java:96`):
+  `catch (Exception e) → RuntimeException("Failed to remap %d mods", e)`. Это **не диагноз, а
+  обёртка** любого исключения этапа `remapJars`. `OutOfMemoryError` в неё не попадает
+  (ловится только `Exception`), значит вышло исключение работы с файлами, а не нехватка кучи.
+- 46 — ровно сет fabric-api под 1.21.11: в
+  `C:\work\vm11\.gradle\loom-cache\remapped_mods\remapped\net\fabricmc\fabric-api` 96
+  каталогов модулей, из них 46 с суффиксом `-16c8840d` (наш набор) и 50 с `-46549a5a`
+  (остались от сборки под 1.21.4). Наших `.java` там нет.
+- Две строки `Cannot remap modifiers ... targets []` — **предупреждение**, а не причина
+  падения: константа `Message.NO_MAPPING_RECURSIVE` (`Message.java:26` tiny-remapper)
+  печатается через `getLogger().warn(...)` в mixin-расширении (`NamedMappable.java:66`,
+  `ConvertibleMappable.java:71`), и при отсутствии маппинга просто возвращает исходное имя.
+  Это про селектор `modifiers` в чужих mixin-конфигах из fabric-api; на результат ремапа не
+  влияет.
+- `Failed to release lock on Build Output Cleanup Cache … файл с открытой пользователем
+  сопоставленной секцией` — Windows `ERROR_USER_MAPPED_FILE`: файл держит живой процесс.
+  Прямое подтверждение, что в момент сборки кэш был занят вторым JVM.
+
+### Почему каждый раз крашится по-разному
+
+По логам демонов `C:\Users\Максим\.gradle\daemon\9.8.2\daemon-*.out.log` сегодня четыре
+падения подряд на одном и том же месте — на настройке Loom:
+
+| время | JVM | что написано |
+|---|---|---|
+| 18:49:38 | демон 29492 | `Failed download after 3 attempts` для `loom.minecraftJarConfiguration` |
+| 18:51:21 | демон 29492 | `UnrecoverableZipException` по merged-джару (это «Фикс1») |
+| 19:16:40 | демон 29492 (из IntelliJ) | `Failed to setup Minecraft, java.nio.file.ClosedFileSystemException` |
+| 19:18:44–19:20:04 | одноразовый 1360 (терминал) | `Failed to remap 46 mods` + `ERROR_USER_MAPPED_FILE` |
+
+Цепочка: сеть дала сбой → Loom не докачал джары Minecraft → при падении конфигурации Loom
+пишет в свой lock-файл `.gradle\loom-cache\.<hash>.lock` строку `disowned`
+(`CompileConfiguration.disownLock`, стр. 445–455) → следующий запуск читает `disowned`,
+печатает «rebuilding loom cache» и включает `refreshDeps` (`CompileConfiguration.java:116–121`)
+→ в этом режиме `remapJars` **сначала удаляет** все 46 готовых джаров (`ModProcessor.java:209`
+`Files.deleteIfExists(getRemappedOutput(info))`), потом перезаписывает их и по каждому ещё
+несколько раз трогает файл (замена access-widener через `ZipUtils.replace`, `stripNestedJars`,
+перезапись `MANIFEST.MF`, `copyToCache`/`copyToMaven`). Любой из этих шагов на Windows
+падает, если файл одновременно держит другой JVM, — отсюда три разных симптома при одной
+причине. Второй JVM — демон 29492: он жив с 18:49 (`tasklist`: java.exe 29492, `-Xmx1G`),
+получал сборку из IntelliJ в 19:16:40 и держит маппинги кэша. Плюс память: в 19:18:44 сам
+Gradle записал `786940313 physical memory requested, 443232256 free` — попросил 750 МБ,
+свободно было 423 МБ из 7,33 ГБ.
+
+### Состояние кэша сейчас (проверено после краша)
+
+- lock-файл Loom в `.gradle\loom-cache` отсутствует → следующий запуск получит
+  `ACQUIRED_CLEAN` и **не** будет пересобирать кэш целиком.
+- Все 46 модулей 1.21.11 на месте: в каждом каталоге есть и `.jar`, и `.pom` (неполных 0);
+  последние перезаписи — 19:19:48–19:20:02, то есть работа фактически сделана, упало на самом
+  хвосте этапа.
+- merged-джар 1.21.11 цел (29 069 записей, `testzip()` → None — см. «Фикс1»).
+- Проверка по исходникам, что переремап не нужен: `ModConfigurationRemapper.java:214–215`
+  берёт в переработку только `refreshDeps || isCacheInvalid(...)`, а
+  `SimpleModDependency.isCacheInvalid` — это `!maven.exists(variant)` (стр. 51–53). Джар и пом
+  есть у всех 46.
+
+### Как собрать (по порядку)
+
+1. `./gradlew --stop` — убрать демон 29492 и любые другие. Проверить
+   `tasklist /FI "IMAGENAME eq java.exe"`: должен остаться только `javaw.exe` лаунчера
+   TLauncher. Если 29492 вернулся — закрыть IntelliJ IDEA.
+2. Освободить память до ~2 ГБ свободных (лишние окна Chrome; игру не запускать параллельно
+   со сборкой).
+3. Одна сборка за раз, без `--no-daemon` и не из двух мест одновременно:
+   `./gradlew assemble "-Pmc=1.21.11" --stacktrace`. `--stacktrace` нужен, чтобы при повторе
+   было видно настоящее исключение (`Failed to remap: <мод>` + тип IO-ошибки) — без него
+   Gradle печатает только обёртку, и в этих четырёх логах `Caused by` нет ни разу.
+4. Если снова `Failed to remap 46 mods` — перезагрузить машину (только так снимаются
+   маппинги `ERROR_USER_MAPPED_FILE`) и выполнить пункт 3 из терминала при закрытой IDEA.
+   Каталог `.gradle\loom-cache\remapped_mods` можно удалить — Loom соберёт его заново;
+   `minecraftMaven` не трогать.
+5. Не помешает: исключить в Avast папки `C:\work\vm11\.gradle` и `C:\work\vm11\build` —
+   за один проход ремапа перезаписывается 92 файла (46 .jar + 46 .pom), и сканер реагирует
+   на них как лок на файлы.
+
+Код мода снова не изменён: правки этого коммита — только этот раздел и исправленный шаг 1 в
+«Фикс1».
+
+
+## Фикс3 (2026-11-01): сборка зелёная. Настоящих причин было четыре, и ни одна не в исходниках
+
+Проверено на самой машине, два запуска подряд, 1 ноября 2026:
+
+```
+./gradlew build "-Pmc=1.21.11" -PhvSkipAuth=1 -PnoUpload
+BUILD SUCCESSFUL in 54s   7 actionable tasks: 7 executed
+BUILD SUCCESSFUL in 34s   (повтор тем же прогоном, тем же JVM-флагом)
+build/libs/visualsmod-1.21.11.jar — 15 051 587 Б, 846 записей, zipfile.testzip() = None
+```
+
+Ни в одном из двух логов нет строк `disowned`, `rebuilding loom cache`,
+`UnrecoverableZipException`, `ClosedFileSystemException`, `Failed to remap` — то есть этап
+настройки Loom, на который приходилось каждое падение из «Фикс1» и «Фикс2», больше не участвует.
+Логи: `C:\hvchk\build_fix3d.log`, `C:\hvchk\build_fix3e.log`.
+
+### Что в «Фикс1» и «Фикс2» оказалось неверным
+
+- Совет «удалить каталог `minecraftMaven\net\minecraft\minecraft-merged-2ae02fda0f`» (шаг 2
+  «Фикс1») построен на ложной предпосылке. Мerged-джар был цел всё это время: 29 069 записей,
+  `testzip()` → None, и рядом легитимный `.backup`. Удаление каталога не лечит ничего, а только
+  заставляет Loom заново собирать 34 МБ и снова писать в то же место, где его может перехватить
+  второй JVM. НЕ УДАЛЯТЬ.
+- «Сборка падает из-за нехватки памяти» — тоже не диагноз. `OutOfMemoryError` не попадает в
+  обёртку `Failed to remap 46 mods` (в `ModProcessor.processMods` ловится только `Exception`),
+  а память в логах — следствие, а не причина.
+- Совет `--no-daemon` из «Фикс1» был неверен по форме: флаг в момент запуска крашит Loom
+  иначе, чем демона. Правильно — `org.gradle.daemon=false` в `gradle.properties` (см. ниже).
+
+### Причина 1. Loom 1.17.21 не может почистить за собой на Gradle 9 — и демон отравляется навсегда
+
+`DaemonUtils.stopWhenIdle` вызывает `TcpOutgoingConnector.connect(Address)`. Проверено `javap`
+по джарам дистрибутивов, которые реально скачаны на этой машине:
+
+```
+gradle-messaging-8.14.3.jar:  ConnectCompletion connect(Address)              ← нужна Loom'у, есть
+gradle-messaging-9.8.2.jar:   ConnectCompletion connect(Address, byte[])      ← только такая, одноаргументной НЕТ
+```
+
+Отсюда `NoSuchMethodError` ровно в том месте, где Loom пытается по-хорошему остановить «свой же»
+демон после сбоя (`ExceptionUtil.processException` → `CompileConfiguration.lambda$run$1`).
+Демон не останавливается, а вместе с ним в JVM остаются живыми `zipfs`-хендлеры Loom (он montage'ит
+client+server jar через `FileSystems.newFileSystem`). Любой последующий прогон в том же демоне
+падает по `ClosedFileSystemException` — этим и объясняются builds 3–6 в
+`daemon-29492.out.log`, где один и тот же процесс выдавал ошибку четыре раза подряд без всякой
+смены кода.
+
+Отравленный демон 29492 снят штатным `./gradlew --stop`. Замер 1 ноября в 21:13
+(`C:\hvchk\stop_daemons.log`): первый прогон — `Stopping Daemon(s)` / `1 Daemon stopped`,
+второй — `No Gradle daemons are running`. Это не косметика: в `daemon-29492.out.log` тот же PID
+четыре раза подряд отдавал `ClosedFileSystemException` без всякой смены кода.
+
+Оговорка: `daemon=false` не означает, что после сборки не остаётся ни одного JVM. Из зелёных
+прогонов живыми остались два (`java.exe` 22008 со start 20:44 и 18868 со start 20:50, у обоих в
+командной строке `GradleDaemon` и `-Xmx2G`); `--stop` снял 18868, а 22008 пережил и первую, и
+вторую команду — то есть в реестре демонов его уже нет, новые сборки он не принимает и в лечении
+не участвует. Вывод «`daemon=false` даёт чистый JVM» опирается на это, а не на подсчёт процессов.
+
+### Причина 2. Понизить Gradle нельзя — Loom требует 9.5.0
+
+Гипотеза «вернуть 8.14.3, где у Loom'а есть рабочий путь восстановления» была проверена и
+опровергнута на живом прогоне: сборка не доходит даже до компиляции,
+
+```
+No matching variant of net.fabricmc:fabric-loom:1.17.21 was found. The consumer was configured
+to find ... 'org.gradle.plugin.api-version' with value '9.5.0' ... Gradle 8.14.3 ...
+BUILD FAILED in 13s   (C:\hvchk\build_fix3b.log)
+```
+
+Оба файла wrapper'а уже возвращены к `gradle-9.8.2-bin.zip`. То есть лечить надо не версию
+Gradle, а способ, которым сборка переживает чужие падения.
+
+### Причина 3. `-Xmx2G` и `daemon=false` лежали не там, где Gradle их читает
+
+В `gradle\wrapper\gradle-wrapper.properties` были дописаны две строки
+`org.gradle.jvmargs=...` и `org.gradle.daemon=false`. Gradle читает эти ключи только из
+`gradle.properties` (и из `-D` командной строки), в wrapper-файле они молча игнорируются.
+Реальная куча задавалась в `gradle.properties`: `-Xmx1G`, что подтвердил сам демон:
+`daemonOpts=-Xmx1G`. Теперь обе строки перенесены по адресу, куча 2G +
+`MaxMetaspaceSize=512m` + `UseParallelGC`, и `org.gradle.daemon=false`.
+
+`daemon=false` — главный страховочный механизм после причины 1: каждый прогон получает новый
+JVM, в котором не может быть чужих zipfs-хендлеров. Плата — +15–20 с на старт, видно по 54 с
+первого прогона против 34 с второго.
+
+### Причина 4. `.gradle/` и `build/` были в git, и их держали IDEA и Avast
+
+Файлы сборки, перечисленные в `.gitignore`, одновременно были **закоммичены** (а сам
+`.gitignore` — нет: `git log -- .gitignore` пустой, он ни разу не попадал в репозиторий).
+В HEAD до уборки висело 2546 файлов, из них `build/` — 980 и `.gradle/` — 325. Раз файл
+отслеживается,
+его сканирует real-time-защита и индексирует VCS-подсветка IDEA; оба маппят его в память, а
+Loom в этот момент его перезаписывает → Windows `ERROR_USER_MAPPED_FILE`
+(«Запрошенную операцию нельзя выполнить для файла с открытой пользователем сопоставленной
+секцией») — ровно та ошибка, что стояла второй строкой в «Фикс2» и в падежении
+`Build Output Cleanup Cache`.
+
+### Уборка: из индекса выведено 1929 файлов, добавлено 2
+
+| что | файлов | куда делось |
+|---|---|---|
+| `build/` | 980 | только из индекса, на диске целы (это кэш сборки) |
+| `src/**/**/*.class` | 560 | удалены с диска — в дерево исходников их накапал прошлый прогон |
+| `.gradle/` | 325 | только из индекса |
+| `tools/` | 35 | вынесены в `C:\hvchk\vm11-junk-2026-11-01\tools\` |
+| `.idea/` | 11 | только из индекса, IDEA продолжает работать с ними на диске |
+| `Holy-visual info/` | 6 | вынесено в `C:\hvchk\vm11-junk-2026-11-01\Holy-visual-info-runtime\` |
+| `vibe_images/` | 1 | AI-оригинал `bg_hv.png` переложен в `C:\Users\Public\hv_tex\vibe_images\` (дампы ассетов по нашему правилу живут там) |
+| `log11.txt`, `refmap_check.json`, gitlink `HV_for_zaKK0` | 3 | `.txt/.json` вынесены в тот же junk-каталог |
+| 4 пустых `Новый текстовый документ.txt`, `MinecraftClientAccessor.java.txt` (тоже 0 Б), 2 `list.txt` с перечнем модулей, `ui.lnk` | 8 | только из индекса, на диске целы; правила для них дописаны в `.gitignore` |
+
+После уборки в индексе 619 файлов — и это ровно те, что должны быть в репозитории: `src/`,
+`gradle/`, `gradlew(.bat)`, `build.gradle`, `settings.gradle`, `gradle.properties`, `README.md`,
+`.gitignore`, `PORT-1.21.11.md`. На диске в корне при этом остались `build/`, `.gradle/`, `.idea/`,
+`run/` и незакрытый `HV_for_zaKK0/` — все они теперь под `.gitignore` и в коммит не попадают.
+`.java` в `src/main/java` — 434 (плюс генерируемый
+`HvMarker.java` = те 435, что считает офлайн-гейт javac).
+
+Про папку `hvgen`: папки с таким именем в дереве нет — `find . -iname "*hvgen*"` пустой.
+Похожее название даёт `tools/` (генераторы `armorgen.py`, `swordgen.py`, `gen_deagle.py`,
+прогонные `parsecheck/*.java` и `.ps1/.vbs`-обёртки). Всё это — инструмент проверки, в сборке
+не участвует: `build.gradle`, `settings.gradle` и `gradle.properties` на них не ссылаются.
+Вынесены, не удалены: можно вернуть одной командой из `C:\hvchk\vm11-junk-2026-11-01\`.
+
+`HV_for_zaKK0\` с диска не ушёл: `mv` отдал `Permission denied`, держит живой `idea64` (PID 2656,
+рядом `fsnotifier`). Это второй клон того же репозитория с **несвязанной** историей
+(`16dbea2 «Распаковал мод»`, которого нет в нашем `git cat-file`), а `origin/main` в нём — устаревший
+локальный ref. Пуш из такого клона перетрёт `main` целиком. Он добавлен в `.gitignore` и выведен из
+индекса; чтобы убрать с диска — закрыть IDEA, потом
+`Remove-Item C:\work\vm11\HV_for_zaKK0 -Recurse -Force` (в нём 42 МБ, и ни одного незапушенного коммита).
+
+Что НЕ мусор и осталось на месте: `C:\hvchk` с офлайн-гейтами (`javac_p52.txt`, `audit2.py`,
+helper'ы `javap`) — без них проверка порта вообще не делается, это рабочий инструмент, а не
+побочный продукт.
+
+Отдельно, по-честному: 14 файлов `src/main/java/resources/assets/minecraft/{items,models/item}/*_spear.json`
+(копья всех семи типов, дважды) лежат в корне, которого Gradle не видит. Ресурсы берутся из
+`src/main/resources`, а `src/main/java/resources` в `build.gradle` никуда не подключён — значит, в
+jar они не попадают и в игре не работают. В индексе их трогать не стал: это не мой вывод проверок, а
+твоя заготовка под профиль копья (#304). Если она нужна «как модель в игре» — перенести в
+`src/main/resources/assets/minecraft/...` тем же `move`; если как заметка — пусть лежит, вреда нет.
+
+### Как собирать теперь (проверено именно так)
+
+1. Один прогон за раз, из одного места, без `--no-daemon` (он уже включён в `gradle.properties`):
+   `./gradlew build "-Pmc=1.21.11" --stacktrace`
+2. При `ClosedFileSystemException` ничего не удалять: просто прогнать ещё раз — новый JVM не
+   наследует чужие хендлеры. Если ошибка повторится дважды, смотреть, кто держит файлы:
+   `tasklist /FI "IMAGENAME eq java.exe"` (лишние JVM от IDEA) и Avast.
+3. Исключить в Avast `C:\work\vm11\.gradle` и `C:\work\vm11\build` — за проход ремапа
+   перезаписывается 92 файла, сканер реагирует на них как на лок. Это только админ-действие
+   самого Максима, агент его не делает.
+4. Каталог `minecraftMaven` не трогать никогда (см. «Фикс1»: джар был цел).
+
+### Остался один блокер — он не в сборке, а в ключе: 401 на `:genHvSignature`
+
+Кэш Loom больше не падает, и сборка дошла до собственной защиты мода:
+
+```
+Execution failed for task ':genHvSignature'
+> HV: сервер отверг ключ сборки (HTTP 401).
+    Куда стучались : https://visualmod-auth-system2.2011shakurov.workers.dev/api/admin/build
+    Ключ взят из  : HOLY_ADMIN_TOKEN, длина 34 симв.
+```
+
+Проверено, что это не код и не сеть (воркер жив, ревизия актуальная: `GET /api/configs/build`
+→ `{"ok":true,"v":"cfg-17.10"}`, что совпадает с `CFG_BUILD` в локальном `worker-merged.mjs`):
+
+- `POST /api/admin/build` с ключом из окружения → 401 «Нет доступа»;
+- `GET /api/admin/keys` с тем же ключом → 401;
+- заведомо выдуманный ключ → тоже 401. То есть `isAdmin()` (`worker-merged.mjs:121`,
+  сравнение с `env.ADMIN_TOKEN`) не проходит вообще ни с чем — секрет в проде не равен
+  переменной `HOLY_ADMIN_TOKEN` на машине (или не задан/стал короче 24 символов).
+- Второй воркер, `visualmod-admin.2011shakurov.workers.dev` (это `LockScreen.ADMIN_API_URL`,
+  к ключу сборки отношения не имеет), на `POST /api/admin/build` отвечает `404 not found` и с
+  настоящим ключом, и с выдуманным — роута там нет и проверка токена до него не доходит.
+- Само значение ключа нигде не печатается и в файлы не попадает; в логах и в этом разделе есть
+  только его длина.
+
+Починка на стороне Cloudflare, её делает только Максим: сверить `HOLY_ADMIN_TOKEN` в PowerShell
+(`$env:HOLY_ADMIN_TOKEN.Length`) со значением `ADMIN_TOKEN` воркера
+`visualmod-auth-system2` (Settings → Secrets) и привести к одному. Вариант «ключ задали вручную в
+одном окне, а сборку погнали из другого» тоже даёт такую картину: переменная уровня пользователя
+(`setx`) может хранить более старый ключ, чем текущая сессия.
+
+До тех пор годный для игроков jar собрать нельзя: `-PhvSkipAuth=1` кладёт в `HvMarker.REF` строку
+`DEV`, а `HvIntegrity.verify()` на такое значение жёстко валит запуск
+(«сборка сделана без ключа администратора»), и это происходит только в реальной игре — в dev-среде
+Fabric проверка пропускается. Оба зелёных прогона выше были именно с `-PhvSkipAuth=1`: они
+доказывают, что починен кэш и компиляция, но jar из них в руки игрокам не годится.
+
+Изменения в коде этого раздела: `gradle.properties` (куча и флаг демона переехали по адресу),
+`gradle/wrapper/gradle-wrapper.properties` (вернули 9.8.2, убраны две бесполезные строки),
+`build.gradle` (сообщение об отказе ключа теперь печатает URL, HTTP-код и длину ключа вместо
+«введи ключ»), `.gitignore` (он же впервые попал в репозиторий + 7 новых правил), `README.md`
+(впервые лежит в репозитории) и уборка индекса. Исходники мода (`src/**.java`) не изменены
+ни на строку — проверено `git diff --cached --name-only HEAD -- '*.java'`: внутри `src/main/java`
+там нет ни одной буквы.
+

@@ -142,8 +142,15 @@ def hvVerifyOnline = { String token ->
     c.outputStream.withCloseable { it.write('{}'.bytes) }
     int code = c.responseCode
     // 401/403 — ключ не тот. 404/405 — ключ принят, но роута в воркере ещё нет.
+    // В сообщение попадает только длина ключа: сам ключ в лог и в вывод сборки не идёт.
     if (code == 401 || code == 403) {
-        throw new GradleException('HV: введи ключ для сборки мода — сервер отверг HOLY_ADMIN_TOKEN (401).')
+        throw new GradleException("HV: сервер отверг ключ сборки (HTTP ${code}).\n" +
+                "  Куда стучались : ${endpoint}\n" +
+                "  Ключ взят из  : HOLY_ADMIN_TOKEN, длина ${token.trim().length()} симв.\n" +
+                "  Сверь это значение с ADMIN_TOKEN воркера (Cloudflare → Worker → Settings → Secrets).\n" +
+                "  Если в этом терминале ключ задавали вручную (\$env:...) — собери здесь; переменная\n" +
+                "  уровня пользователя (setx) может хранить другой, более старый ключ.\n" +
+                "  Только проверить компиляцию без ключа: gradlew build -PhvSkipAuth=1")
     }
     println "HV: сервер принял ключ сборки (HTTP ${code})"
 }
