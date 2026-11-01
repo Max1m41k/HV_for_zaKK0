@@ -23,6 +23,14 @@ public final class HudStyle {
 
     private HudStyle() {}
 
+    /**
+     * В 1.21.11 {@code DrawContext.drawText} выходит сразу, если старший байт цвета равен нулю
+     * (ColorHelper.getAlpha), поэтому цвет вида 0xFFFFFF не рисует вообще ничего.
+     */
+    public static int opaque(int color) {
+        return (color & 0xFF000000) == 0 ? color | 0xFF000000 : color;
+    }
+
     public static int panelAlpha(float fade) {
         int a = (int) (0xE0 * Math.min(1f, Math.max(0f, fade)));
         return (a << 24) | (BG & 0x00FFFFFF);
@@ -53,7 +61,7 @@ public final class HudStyle {
         applyTransform(ctx, x, y, w, h, t);
         drawPanelRounded(ctx, x, y, w, h, t.alpha(), ACCENT, FillStyle.SOLID, radius);
         ctx.drawTextWithShadow(mc.textRenderer, label, x + 9, y + 5, TEXT_DIM);
-        ctx.drawTextWithShadow(mc.textRenderer, value, x + 9 + lw + 4, y + 5, valueColor);
+        ctx.drawTextWithShadow(mc.textRenderer, value, x + 9 + lw + 4, y + 5, opaque(valueColor));
         popTransform(ctx);
         return w;
     }
@@ -87,7 +95,7 @@ public final class HudStyle {
         drawPanelRounded(ctx, x, y, w, h, t.alpha(), ACCENT, FillStyle.SOLID, HudRadius.active());
         if (icon != null) HudIcons.draw(ctx, icon, x + 7, y + (h - HudIcons.SIZE) / 2f, TEXT_DIM);
         ctx.drawTextWithShadow(mc.textRenderer, label, x + 9 + iw, y + 5, TEXT_DIM);
-        ctx.drawTextWithShadow(mc.textRenderer, value, x + 9 + iw + lw + 4, y + 5, valueColor);
+        ctx.drawTextWithShadow(mc.textRenderer, value, x + 9 + iw + lw + 4, y + 5, opaque(valueColor));
         popTransform(ctx);
         return w;
     }

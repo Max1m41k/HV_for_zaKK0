@@ -7,6 +7,7 @@ import com.visualmod.module.Module;
 import com.visualmod.module.modules.hud.BindsHUD;
 import com.visualmod.module.modules.hud.HudPosition;
 import com.visualmod.module.modules.hud.HudRadius;
+import com.visualmod.module.modules.hud.HudRenderer;
 import com.visualmod.module.modules.hud.InterfaceHUD;
 import com.visualmod.module.modules.hud.ScoreboardEdit;
 import com.visualmod.module.modules.util.ChatPlus;
@@ -37,7 +38,15 @@ public abstract class ChatHudEditMixin extends Screen {
     protected ChatHudEditMixin(Text title) { super(title); }
 
     @Unique private static boolean visuals$editable(Module m) {
-        return m.getCategory() == Module.Category.HUD || m.getName().equals("EventNotification");
+        if (m.getName().equals("EventNotification")) return true;
+        if (m.getCategory() != Module.Category.HUD) return false;
+        // Плашку показываем только там, где модуль действительно рисуется в точке из HudPosition.
+        // Иначе в редакторе HUD стоят пустые прямоугольники, которые не двигаются и перехватывают
+        // клики: BlurGUI/GUIAnimations на весь экран, DeathCard и баннеры — по центру.
+        return HudRenderer.movable(m.getName())
+                || m.getName().equals("InterfaceHUD")
+                || m.getName().equals("SwapFlash")
+                || m.getName().equals("Scoreboard");
     }
 
     @Unique private String visuals$dragging;
@@ -66,20 +75,20 @@ public abstract class ChatHudEditMixin extends Screen {
                 ctx.fill(b[0], b[1], b[0] + b[2], b[1] + b[3], drag ? 0xAA7B5CF0 : 0x66000000);
                 ctx.drawStrokedRectangle(b[0], b[1], b[2], b[3], drag ? 0xFFB399FF : sel ? 0xFF7B5CF0 : 0xFFFFFFFF);
                 if (sel && !drag) visuals$drawHandles(ctx, b);
-                HudIcons.drawForModule(ctx, m.getName(), b[0] + 4, b[1] + 3, 0xFFFFFF);
+                HudIcons.drawForModule(ctx, m.getName(), b[0] + 4, b[1] + 3, 0xFFFFFFFF);
                 ctx.drawTextWithShadow(this.client.textRenderer, m.getDisplayName(),
-                        b[0] + 3 + HudIcons.STEP, b[1] + 2, 0xFFFFFF);
+                        b[0] + 3 + HudIcons.STEP, b[1] + 2, 0xFFFFFFFF);
             }
             visuals$drawGuides(ctx);
             if (any) {
                 String hint = InterfaceHUD.sizeEditMode()
                         ? "§7стрелки — сдвиг · полоса ниже — размер"
                         : "§7Ctrl + перетащить HUD · стрелки — сдвиг выбранного";
-                ctx.drawTextWithShadow(this.client.textRenderer, hint, this.width - 236, 4, 0xFFFFFF);
+                ctx.drawTextWithShadow(this.client.textRenderer, hint, this.width - 236, 4, 0xFFFFFFFF);
                 visuals$drawToolbar(ctx, mouseX, mouseY);
             }
         } else {
-            ctx.drawTextWithShadow(this.client.textRenderer, "§8Ctrl — двигать HUD  ·  клик — закругление  ·  Ctrl+стрелки — сдвиг  ·  EventNotification — таблица", 4, 4, 0xFFFFFF);
+            ctx.drawTextWithShadow(this.client.textRenderer, "§8Ctrl — двигать HUD  ·  клик — закругление  ·  Ctrl+стрелки — сдвиг  ·  EventNotification — таблица", 4, 4, 0xFFFFFFFF);
         }
 
         if (visuals$radiusFor != null && !InputUtil.isKeyPressed(MinecraftClient.getInstance().getWindow(), GLFW.GLFW_KEY_LEFT_CONTROL)) {
@@ -420,7 +429,7 @@ public abstract class ChatHudEditMixin extends Screen {
         for (int[] b : visuals$toolbarBoxes()) {
             boolean hov = visuals$hit(mouseX, mouseY, b);
             HudStyle.fillRounded(ctx, b[0], b[1], b[2], b[3], 6, hov ? 0xE632323E : 0xCC141414);
-            ctx.drawTextWithShadow(this.client.textRenderer, labels[b[4]], b[0] + 6, b[1] + 2, 0xFFFFFF);
+            ctx.drawTextWithShadow(this.client.textRenderer, labels[b[4]], b[0] + 6, b[1] + 2, 0xFFFFFFFF);
         }
     }
 
@@ -455,7 +464,7 @@ public abstract class ChatHudEditMixin extends Screen {
             ctx.drawStrokedRectangle(b[0], b[1], b[2], b[3], drag ? 0xFFB399FF : sel ? 0xFF7B5CF0 : 0xFFFFFFFF);
             if (sel && !drag) visuals$drawHandles(ctx, b);
             ctx.drawTextWithShadow(this.client.textRenderer, InterfaceHUD.partLabel(i),
-                    b[0] + 2, Math.max(0, b[1] - 10), 0xFFFFFF);
+                    b[0] + 2, Math.max(0, b[1] - 10), 0xFFFFFFFF);
         }
     }
 
@@ -463,6 +472,8 @@ public abstract class ChatHudEditMixin extends Screen {
     private int[] visuals$box(Module m) {        // InterfaceHUD сам домножает свои границы на масштаб — дважды масштабировать нельзя.
         if (m.getName().equals("InterfaceHUD")) return InterfaceHUD.bounds();
         int[] b = visuals$rawBox(m);
+        // Ванильный скорборд миксин только сдвигает, но не масштабирует — плашка повторяет это.
+        if (m.getName().equals("Scoreboard")) return b;
         float s = HudPosition.getScale(m.getName());
         if (com.visualmod.util.HudScale.on(s)) {
             b[2] = com.visualmod.util.HudScale.scaled(b[2], s);
@@ -476,6 +487,10 @@ public abstract class ChatHudEditMixin extends Screen {
         if (m.getName().equals("BindsHUD")) return BindsHUD.bounds();
         int[] g = HudPosition.glide(m.getName(), this.width, this.height);
         int x = g[0], y = g[1];
+        if (m.getName().equals("Scoreboard")) {
+            int[] sb = ScoreboardEdit.bounds(this.width, this.height);
+            if (sb != null) return sb;
+        }
         int w = this.client.textRenderer.getWidth(m.getDisplayName()) + 8, h = 12;
         return HudRadius.boundsOrLabel(m.getName(), x, y, w, h);
     }

@@ -11,6 +11,6 @@ public class WatermarkComponent extends DraggableHUDComponent {
     @Override
     public void render(DrawContext context, TextRenderer textRenderer) {
         if (!visible) return;
-        context.drawText(textRenderer, "PulseVisual Lite", x, y, 0xAAAAAA, false);
+        context.drawText(textRenderer, "PulseVisual Lite", x, y, 0xFFAAAAAA, false);
     }
 }

@@ -77,7 +77,7 @@ public class ChatAnimations extends Module implements Configurable {
             ctx.drawStrokedRectangle(x, y, 170, 24, 0x55FFFFFF);
         }
         ctx.drawText(mc.textRenderer,
-                "§7Font: §f" + FONTS[fontIndex], x + 6, y + 8, 0xFFFFFF, true);
+                "§7Font: §f" + FONTS[fontIndex], x + 6, y + 8, 0xFFFFFFFF, true);
     }
 
     public static String applyCustomFont(String text) {

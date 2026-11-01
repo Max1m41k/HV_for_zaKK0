@@ -16,7 +16,7 @@ public class CoordinatesComponent extends DraggableHUDComponent {
         if (client.player != null) {
             String coords = String.format("XYZ: %.1f / %.1f / %.1f",
                     client.player.getX(), client.player.getY(), client.player.getZ());
-            context.drawText(textRenderer, coords, x, y, 0xFFFFFF, true);
+            context.drawText(textRenderer, coords, x, y, 0xFFFFFFFF, true);
         }
     }
 }

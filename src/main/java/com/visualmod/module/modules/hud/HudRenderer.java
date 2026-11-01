@@ -9,9 +9,26 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.RenderTickCounter;
 
 public class HudRenderer {
+
+    /**
+     * Модули, которые реально отрисованы в точке из HudPosition. Список наполняет сам цикл
+     * рендера, поэтому он не разъезжается с цепочкой instanceof ниже.
+     */
+    private static final java.util.Set<String> MOVED = new java.util.HashSet<>();
+
     public static void init() {
         HudPosition.load();
         HudRenderCallback.EVENT.register(HudRenderer::render);
+    }
+
+    /**
+     * true — плашка модуля в редакторе HUD соответствует тому, где модуль рисуется:
+     * его можно двигать и нажимать. Остальные модули категории HUD рисуют себя сами
+     * (по центру экрана, над хотбаром или вообще на весь экран), и их плашка была бы
+     * пустой и неподвижной.
+     */
+    public static boolean movable(String name) {
+        return MOVED.contains(name);
     }
 
     private static void render(DrawContext ctx, RenderTickCounter tc) {
@@ -30,7 +47,8 @@ public class HudRenderer {
             com.visualmod.util.HudScale.begin(ctx, s, x, y);
             HudRadius.begin(m.getName());
             int accent = com.visualmod.util.Rgb.begin(m.getName());
-            renderModule(ctx, m, x, y);
+            boolean moved = renderModule(ctx, m, x, y);
+            if (moved) MOVED.add(m.getName()); else MOVED.remove(m.getName());
             com.visualmod.util.Rgb.end(accent);
             HudRadius.end();
             com.visualmod.util.HudScale.end(ctx, s);
@@ -39,24 +57,25 @@ public class HudRenderer {
         TotemCounter.renderTotemCounter(ctx, mc);
     }
 
-    private static void renderModule(DrawContext ctx, Module m, int x, int y) {
-            if (m instanceof WatermarkHUD h) h.render(ctx, x, y);
-            else if (m instanceof FPSHUD h) h.render(ctx, x, y);
-            else if (m instanceof CpsHUD h) h.render(ctx, x, y);
-            else if (m instanceof CoordinatesHUD h) h.render(ctx, x, y);
-            else if (m instanceof ArmorStatus h) h.render(ctx, x, y);
-            else if (m instanceof PotionStatus h) h.render(ctx, x, y);
-            else if (m instanceof Keystrokes h) h.render(ctx, x, y);
-            else if (m instanceof TargetHUD h) h.render(ctx, x, y);
-            else if (m instanceof MiniMap h) h.render(ctx, x, y);
-            else if (m instanceof InventoryPreview h) h.render(ctx, x, y);
-            else if (m instanceof MusicOverlay h) h.render(ctx, x, y);
-            else if (m instanceof HotbarHUD h) h.render(ctx, x, y);
-            else if (m instanceof ChatAnimations h) h.render(ctx, x, y);
-            else if (m instanceof TabGUI h) h.render(ctx, x, y);
-            else if (m instanceof Cooldown h) h.render(ctx, x, y);
-            else if (m instanceof BindsHUD h) h.render(ctx, x, y);
-            else if (m instanceof DurabilityWarn h) h.render(ctx, x, y);
-            else if (m instanceof SupplyWarn h) h.render(ctx, x, y);
+    private static boolean renderModule(DrawContext ctx, Module m, int x, int y) {
+            if (m instanceof WatermarkHUD h) { h.render(ctx, x, y); return true; }
+            else if (m instanceof FPSHUD h) { h.render(ctx, x, y); return true; }
+            else if (m instanceof CpsHUD h) { h.render(ctx, x, y); return true; }
+            else if (m instanceof CoordinatesHUD h) { h.render(ctx, x, y); return true; }
+            else if (m instanceof ArmorStatus h) { h.render(ctx, x, y); return true; }
+            else if (m instanceof PotionStatus h) { h.render(ctx, x, y); return true; }
+            else if (m instanceof Keystrokes h) { h.render(ctx, x, y); return true; }
+            else if (m instanceof TargetHUD h) { h.render(ctx, x, y); return true; }
+            else if (m instanceof MiniMap h) { h.render(ctx, x, y); return true; }
+            else if (m instanceof InventoryPreview h) { h.render(ctx, x, y); return true; }
+            else if (m instanceof MusicOverlay h) { h.render(ctx, x, y); return true; }
+            else if (m instanceof HotbarHUD h) { h.render(ctx, x, y); return true; }
+            else if (m instanceof ChatAnimations h) { h.render(ctx, x, y); return true; }
+            else if (m instanceof TabGUI h) { h.render(ctx, x, y); return true; }
+            else if (m instanceof Cooldown h) { h.render(ctx, x, y); return true; }
+            else if (m instanceof BindsHUD h) { h.render(ctx, x, y); return true; }
+            else if (m instanceof DurabilityWarn h) { h.render(ctx, x, y); return true; }
+            else if (m instanceof SupplyWarn h) { h.render(ctx, x, y); return true; }
+            return false;
     }
 }

@@ -21,7 +21,7 @@ public class TargetHUDComponent extends DraggableHUDComponent {
             float health = target.getHealth();
             float maxHealth = target.getMaxHealth();
             int percent = (int) ((health / maxHealth) * 100);
-            context.drawText(textRenderer, name + " §c" + percent + "%", x, y, 0xFFFFFF, true);
+            context.drawText(textRenderer, name + " §c" + percent + "%", x, y, 0xFFFFFFFF, true);
             int barWidth = 100;
             int healthWidth = (int) (barWidth * (health / maxHealth));
             context.fill(x, y + 12, x + barWidth, y + 16, 0xFF333333);

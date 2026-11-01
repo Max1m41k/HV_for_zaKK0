@@ -37,7 +37,7 @@ public class Keystrokes extends Module {
     private void drawKey(DrawContext ctx, String t, int x, int y, int w, boolean active) {
         int bg = active ? 0xCC7B5CF0 : 0x99141414;
         HudStyle.fillRounded(ctx, x, y, w, 16, 4, bg);
-        ctx.drawCenteredTextWithShadow(mc.textRenderer, t, x + w / 2, y + 4, active ? 0xFFFFFF : 0x999999);
+        ctx.drawCenteredTextWithShadow(mc.textRenderer, t, x + w / 2, y + 4, active ? 0xFFFFFFFF : 0xFF999999);
     }
 
     public void render(DrawContext ctx) { render(ctx, 5, 60); }

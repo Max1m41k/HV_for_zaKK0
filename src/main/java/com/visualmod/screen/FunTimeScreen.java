@@ -92,7 +92,7 @@ public class FunTimeScreen extends Screen {
     public void render(net.minecraft.client.gui.DrawContext context, int mouseX, int mouseY, float delta) {
         renderCustomBackground(context, delta);
 
-        context.drawCenteredTextWithShadow(this.textRenderer, "Выберите тип режима:", this.width / 2, 15, 16733525);
+        context.drawCenteredTextWithShadow(this.textRenderer, "Выберите тип режима:", this.width / 2, 15, 0xFFFFF5F5);
         super.render(context, mouseX, mouseY, delta);
 
         if (selectedCategory > 0) {
@@ -104,7 +104,7 @@ public class FunTimeScreen extends Screen {
 
                 String idStr = String.valueOf(cartId);
                 int textWidth = this.textRenderer.getWidth(idStr);
-                context.drawTextWithShadow(this.textRenderer, idStr, button.getX() + 17 - (textWidth / 2), button.getY() + 6, 16777215);
+                context.drawTextWithShadow(this.textRenderer, idStr, button.getX() + 17 - (textWidth / 2), button.getY() + 6, 0xFFFFFFFF);
             }
         }
     }

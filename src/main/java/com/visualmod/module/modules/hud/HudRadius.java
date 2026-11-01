@@ -15,6 +15,9 @@ public final class HudRadius {
     public static final float MAX = 12f;
     public static final float DEFAULT = 8f;
 
+    /** Максимальный зазор между прямоугольниками одного модуля: дальше — не часть панели. */
+    private static final int GAP = 10;
+
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final File CONFIG = new File(MinecraftClient.getInstance().runDirectory, "config/hud_radius.json");
 
@@ -114,6 +117,11 @@ public final class HudRadius {
             anyBound = true;
             return;
         }
+        // Первый прямоугольник — якорь панели. Дальше объединяем только прилегающие:
+        // иначе далёкая декоративная плашка (метка у прицела, всплашка в углу) раздувает
+        // хитбокс модуля, и в редакторе HUD захватывается пол-экрана.
+        if (ix > bx + bw + GAP || ix + iw < bx - GAP
+                || iy > by + bh + GAP || iy + ih < by - GAP) return;
         int x2 = Math.max(bx + bw, ix + iw);
         int y2 = Math.max(by + bh, iy + ih);
         bx = Math.min(bx, ix);

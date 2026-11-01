@@ -81,7 +81,7 @@ public class FriendsScreen extends Screen {
         int shown = 0;
         for (String n : items) {
             if (shown >= (kind == 2 ? 6 : 3)) { ctx.drawTextWithShadow(textRenderer, "…ещё " + (items.size() - shown), x + 6, y, 0xFF6F6F84); y += 11; break; }
-            ctx.drawTextWithShadow(textRenderer, (kind == 2 ? "§a▲ §f" : "§7· §f") + n, x + 6, y, 0xFFFFFF);
+            ctx.drawTextWithShadow(textRenderer, (kind == 2 ? "§a▲ §f" : "§7· §f") + n, x + 6, y, 0xFFFFFFFF);
             int bx = px() + W - 14 - 18;
             if (kind == 1) {
                 button(ctx, bx - 20, y - 2, 16, 12, "✓", GREEN, mx, my, () -> Friends.act("accept", n, m -> status = m));

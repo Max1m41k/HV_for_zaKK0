@@ -138,7 +138,7 @@ public class HolyWorldScreen extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         renderCustomBackground(context, delta);
 
-        context.drawCenteredTextWithShadow(this.textRenderer, "Выбор Лайт анархии:", this.width / 2, 15, 16733525);
+        context.drawCenteredTextWithShadow(this.textRenderer, "Выбор Лайт анархии:", this.width / 2, 15, 0xFFFFF5F5);
         super.render(context, mouseX, mouseY, delta);
 
         if (selectedCategory > 0) {
@@ -150,7 +150,7 @@ public class HolyWorldScreen extends Screen {
 
                 String numStr = String.valueOf(currentDisplayNumber);
                 int textWidth = this.textRenderer.getWidth(numStr);
-                context.drawTextWithShadow(this.textRenderer, numStr, button.getX() + 13 - (textWidth / 2), button.getY() + 7, 16777215);
+                context.drawTextWithShadow(this.textRenderer, numStr, button.getX() + 13 - (textWidth / 2), button.getY() + 7, 0xFFFFFFFF);
             }
         }
     }

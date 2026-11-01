@@ -24,11 +24,14 @@ public abstract class ScoreboardTextMixin {
     @Inject(method = M, at = @At("HEAD"), require = 0)
     private void visuals$reset(DrawContext ctx, ScoreboardObjective obj, CallbackInfo ci) {
         visuals$fillIdx = 0;
+        ScoreboardEdit.beginFrame();
     }
 
     @Redirect(method = M, at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/DrawContext;fill(IIIII)V"), require = 0)
     private void visuals$fill(DrawContext ctx, int x1, int y1, int x2, int y2, int color) {
         if (!ScoreboardEdit.isActive()) { ctx.fill(x1, y1, x2, y2, color); return; }
+        // координаты ДО смещения из ScoreboardEditMixin — редактор HUD рисует плашку по ним
+        ScoreboardEdit.noteRect(x1, y1, x2, y2);
         int idx = visuals$fillIdx++;
         int r = ScoreboardEdit.rounded ? ScoreboardEdit.radius : 0;
         RoundedRect.fill(ctx, x1, y1, x2, y2, r, ScoreboardEdit.backgroundColor(idx == 0), idx == 0, idx != 0);

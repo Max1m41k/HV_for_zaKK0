@@ -294,7 +294,7 @@ public class EventNotification extends Module implements Configurable {
                 int sw = Math.max(150, mc.textRenderer.getWidth(line) + 20);
                 panel(ctx, x, iy, sw, 18);
                 ctx.fill(x + 3, iy + 3, x + 5, iy + 15, bar);
-                ctx.drawTextWithShadow(mc.textRenderer, line, x + 10, iy + 5, 0xFFFFFF);
+                ctx.drawTextWithShadow(mc.textRenderer, line, x + 10, iy + 5, 0xFFFFFFFF);
                 bwMax = sw;
                 iy += 22;
             }
@@ -308,14 +308,14 @@ public class EventNotification extends Module implements Configurable {
                 panel(ctx, x, iy, w, h);
                 HudStyle.drawTitle(ctx, x + 9, iy + 5, "Ивенты · " + rows.size());
                 ctx.fill(x + 9, iy + 16, x + w - 9, iy + 17, 0x30FFFFFF);
-                for (int i = 0; i < rows.size(); i++) ctx.drawTextWithShadow(mc.textRenderer, rows.get(i), x + 9, iy + 18 + i * rowH, 0xFFFFFF);
+                for (int i = 0; i < rows.size(); i++) ctx.drawTextWithShadow(mc.textRenderer, rows.get(i), x + 9, iy + 18 + i * rowH, 0xFFFFFFFF);
                 bwMax = Math.max(bwMax, w);
                 iy += h + 4;
                 lastPad = 4;
             }
             for (String s : pops) {
                 panel(ctx, x, iy, w, 18);
-                ctx.drawTextWithShadow(mc.textRenderer, s, x + 9, iy + 5, 0xFFFFFF);
+                ctx.drawTextWithShadow(mc.textRenderer, s, x + 9, iy + 5, 0xFFFFFFFF);
                 bwMax = Math.max(bwMax, w);
                 iy += 22;
                 lastPad = 4;

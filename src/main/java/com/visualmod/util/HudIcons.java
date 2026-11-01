@@ -67,6 +67,7 @@ public final class HudIcons {
 
     /** id — короткое имя части ("fps", "ping", ...); неизвестный id рисует точку, чтобы чип не «прыгал». */
     public static void draw(DrawContext ctx, String id, float x, float y, int color) {
+        color = HudStyle.opaque(color);
         int ix = Math.round(x), iy = Math.round(y);
         switch (id == null ? "" : id) {
             case "watermark" -> crown(ctx, ix, iy, color);
