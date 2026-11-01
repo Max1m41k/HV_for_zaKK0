@@ -276,6 +276,28 @@ public final class HudIcons {
         ctx.fill(x + 7, y + 4, x + 9, y + 5, c);
     }
 
+    /**
+     * Две шестерни — значок настроек. В сетке 9×9 они сливаются в пятно (отверстие меньшей
+     * шестерни выходит меньше пикселя), поэтому размер задаёт вызывающий код.
+     */
+    public static void gears(DrawContext ctx, float x, float y, float size, int color) {
+        color = HudStyle.opaque(color);
+        float u = size / 9f;
+        gearAt(ctx, x + 3.0f * u, y + 3.0f * u, 2.4f * u, 1.3f * u, u, 1.6f * u, color);
+        gearAt(ctx, x + 7.1f * u, y + 7.1f * u, 1.9f * u, 1.05f * u, u, 1.4f * u, color);
+    }
+
+    private static void gearAt(DrawContext ctx, float cx, float cy, float outer, float inner,
+                               float tooth, float width, int c) {
+        HudStyle.ring(ctx, cx, cy, inner, outer, 0f, 360f, c);
+        int ix = Math.round(cx), iy = Math.round(cy);
+        int ro = Math.round(outer), rw = Math.round(width / 2f), rt = Math.round(tooth);
+        ctx.fill(ix - rw, iy - ro - rt, ix + rw, iy - ro + 1, c);
+        ctx.fill(ix - rw, iy + ro - 1, ix + rw, iy + ro + rt, c);
+        ctx.fill(ix - ro - rt, iy - rw, ix - ro + 1, iy + rw, c);
+        ctx.fill(ix + ro - 1, iy - rw, ix + ro + rt, iy + rw, c);
+    }
+
     private static void star(DrawContext ctx, int x, int y, int c) {
         ctx.fill(x + 4, y + 0, x + 5, y + 9, c);
         ctx.fill(x + 0, y + 4, x + 9, y + 5, c);

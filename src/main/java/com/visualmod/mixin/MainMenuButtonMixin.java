@@ -4,6 +4,7 @@ import net.minecraft.client.gui.screen.TitleScreen;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.ClickableWidget;
+import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import org.spongepowered.asm.mixin.Mixin;
@@ -24,7 +25,11 @@ import java.util.List;
 public class MainMenuButtonMixin extends Screen {
 
     private static final Identifier BG = Identifier.of("visualmod", "textures/gui/bg_hv.png");
+    private static final Identifier HW_LOGO = Identifier.of("visualmod", "textures/gui/hw_logo.png");
     private static final int MAIN_W = 188, MAIN_H = 22, ICON = 24, ICON_GAP = 6;
+    /** Размер значка в квадратной кнопке: в 9x9 логотип и две шестерни не читаются. */
+    private static final int GLYPH = 18;
+    private static final float BADGE_SCALE = 1.4F;
 
     private final List<ClickableWidget> customMenuButtons = new ArrayList<>();
     private final List<Icon> buttonIcons = new ArrayList<>();
@@ -57,11 +62,11 @@ public class MainMenuButtonMixin extends Screen {
             if (this.client != null) this.client.scheduleStop();
         }, startX, startY + (MAIN_H + 6) * 2, true);
 
-        addIcon("key", Text.of("AltManager"), b -> this.client.setScreen(new AccountScreen(this)));
-        addIcon("compass", Text.of("HolyWorld"), b ->
+        addIcon("text:AK", Text.of("AltManager"), b -> this.client.setScreen(new AccountScreen(this)));
+        addIcon("logo", Text.of("HolyWorld"), b ->
                 com.visualmod.screen.HolyWorldScreen.connectAndCommand("msk.holyworld.ru", null));
-        addIcon("star", Text.of("Funt1m1"), b -> this.client.setScreen(new FunTimeScreen(this)));
-        addIcon("gear", Text.of("Настройки"), b -> this.client.setScreen(
+        addIcon("text:FT", Text.of("Funt1m1"), b -> this.client.setScreen(new FunTimeScreen(this)));
+        addIcon("gears", Text.of("Настройки"), b -> this.client.setScreen(
                 new net.minecraft.client.gui.screen.option.OptionsScreen(this, this.client.options)));
         if (com.visualmod.util.LauncherBackground.hasAny()) {
             addIcon("eye", Text.of("Смена фона игры"), b -> this.client.setScreen(
@@ -103,8 +108,18 @@ public class MainMenuButtonMixin extends Screen {
         }
     }
 
-    private record Icon(ClickableWidget button, String glyph, boolean danger) {}
+    /** Надпись вместо глифа в квадратной кнопке. Сообщение кнопки не используем — оно остаётся полным именем в тултипе. */
+    private void badge(net.minecraft.client.gui.DrawContext context, String label, float cx, float cy, int color) {
+        int tw = this.textRenderer.getWidth(label);
+        context.getMatrices().pushMatrix();
+        context.getMatrices().scale(BADGE_SCALE, BADGE_SCALE);
+        context.drawTextWithShadow(this.textRenderer, "§l" + label,
+                Math.round(cx / BADGE_SCALE - tw / 2f),
+                Math.round(cy / BADGE_SCALE - this.textRenderer.fontHeight / 2f), color);
+        context.getMatrices().popMatrix();
+    }
 
+    private record Icon(ClickableWidget button, String glyph, boolean danger) {}
     @Inject(method = "render", at = @At("HEAD"), cancellable = true)
     private void visuals$renderMainMenuBackground(net.minecraft.client.gui.DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         if (this.children().size() > customMenuButtons.size() || !buttonsInitialized) {
@@ -173,14 +188,23 @@ public class MainMenuButtonMixin extends Screen {
             HudStyle.fillRounded(context, x, y, w, h, r, face);
 
             int glyphColor = hovered ? HudStyle.ACCENT : 0xFFB4BAC8;
-            int textWidth = button.getWidth() == button.getHeight() ? 0 : this.textRenderer.getWidth(button.getMessage());
-            int groupW = textWidth == 0 ? HudIcons.SIZE : HudIcons.SIZE + 5 + textWidth;
-            int gx = x + (w - groupW) / 2, gy = y + (h - HudIcons.SIZE) / 2;
-            HudIcons.draw(context, icon.glyph(), gx, gy, glyphColor);
+            String glyph = icon.glyph();
+            int textWidth = w == h ? 0 : this.textRenderer.getWidth(button.getMessage());
             if (textWidth > 0) {
+                int gx = x + (w - (HudIcons.SIZE + 5 + textWidth)) / 2;
+                HudIcons.draw(context, glyph, gx, y + (h - HudIcons.SIZE) / 2, glyphColor);
                 context.drawTextWithShadow(this.textRenderer, button.getMessage(),
                         gx + HudIcons.SIZE + 5, y + (h - this.textRenderer.fontHeight) / 2,
                         hovered ? 0xFFFFFFFF : 0xFFF2F2F2);
+            } else if (glyph.equals("logo")) {
+                context.drawTexture(RenderPipelines.GUI_TEXTURED, HW_LOGO,
+                        x + (w - GLYPH) / 2, y + (h - GLYPH) / 2, 0f, 0f, GLYPH, GLYPH, 32, 32);
+            } else if (glyph.startsWith("text:")) {
+                badge(context, glyph.substring(5), x + w / 2f, y + h / 2f, glyphColor);
+            } else if (glyph.equals("gears")) {
+                HudIcons.gears(context, x + (w - GLYPH) / 2f, y + (h - GLYPH) / 2f, GLYPH, glyphColor);
+            } else {
+                HudIcons.draw(context, glyph, x + (w - HudIcons.SIZE) / 2, y + (h - HudIcons.SIZE) / 2, glyphColor);
             }
             if (hovered && pulse > 0f) {
                 // лёгкая «живая» подсветка нижней кромки, чтобы плашка не была плоской
