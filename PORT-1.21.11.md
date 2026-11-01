@@ -684,3 +684,50 @@ proj = `getBasicProjectionMatrix(tickDelta)`). Пилюля над точкой 
 
 Гейты после пачки: офлайн-javac — 0 ошибок (`C:\hvchk\javac_p51.txt`), `audit2.py` —
 152 хука, 1 ложная `NOJAVAP` по joml (`C:\hvchk\audit_p51.txt`).
+
+
+## Фикс1 (2026-11-01): краш сборки — кэш Loom, а не код
+
+`./gradlew assemble "-Pmc=1.21.11"` упал на этапе конфигурации, до компиляции мода:
+
+```
+Failed to setup Minecraft, net.fabricmc.loom.util.FileSystemUtil$UnrecoverableZipException:
+C:\work\vm11\.gradle\loom-cache\minecraftMaven\net\minecraft\minecraft-merged-2ae02fda0f\...\minecraft-merged-2ae02fda0f-1.21.11-...-v2.jar
+BUILD FAILED in 2m 19s
+```
+
+Причина: предыдущий запуск gradle был убит во время пересборки loom-кэша (в логе —
+`Previous process has disowned the lock due to abrupt termination`). Merged-джар
+`minecraft-merged-2ae02fda0f` остался недозаписанным, и Loom при проверке CRC выкинул
+`UnrecoverableZipException`. Ни один `.java`/`.json` мода в краше не участвует. Вторая строка
+лога `NoSuchMethodError: TcpOutgoingConnector.connect(Address)` в `DaemonUtils.stopWhenIdle` —
+несовместимость Loom 1.17.21 с внутренним API Gradle 9.8.2 на ветке «остановить демон при
+ошибке»; на результат сборки не влияет, но шумит.
+
+Что проверено после краша:
+- merged-джар сейчас цел: 29 069 записей, `testzip()` → None (все CRC сошлись), 34 805 206 Б,
+  перезаписан 11-01 18:53:38 (пересборка завершилась успешно); рядом легитимный `.backup`
+  от 10-27 — тоже валидный, его не трогать.
+- офлайн-гейты по этому же джару зелёные: javac — 0 ошибок, 435 файлов
+  (`C:\hvchk\javac_p52.txt`), `audit2.py` — 152 хука и 1 ложная `NOJAVAP` по joml
+  (`C:\hvchk\audit_p52.txt`). То есть исходники пачки 5 к крашу отношения не имеют.
+- диск: 21 ГБ свободно — это не прошлогодний случай «remapJar падает из-за ENOSPC».
+- осколок убитого процесса `zipfstmp10616582729441848573.tmp` (34 МБ) убран из каталога
+  merged-джара в `C:\work\vm11\.gradle\loom-cache\_stale\` — не удалён, при необходимости
+  можно вернуть на место.
+- ресурсы пачки 5 вычитаны на всякий случай (краш был до них): 53 JSON-файла в
+  `src/main/resources` парсятся без ошибок; в `visualmod.mixins.json` 104 записи, под каждую
+  есть `.java` в `com/visualmod/mixin/` и ни одного лишнего — после удаления `SlotsSwitch`
+  и `Tab+` висячих ссылок не осталось; `fabric.mod.json` → id `visualsmod`, version `1.5`.
+
+Как собрать:
+1. `./gradlew assemble "-Pmc=1.21.11" --no-daemon` — `--no-daemon` заодно убирает шум от
+   `stopWhenIdle`.
+2. Если `UnrecoverableZipException` повторится — удалить каталог
+   `C:\work\vm11\.gradle\loom-cache\minecraftMaven\net\minecraft\minecraft-merged-2ae02fda0f`
+   и запустить сборку снова: Loom соберёт merged-джар с нуля (первые 2–4 минуты). Остальной
+   loom-кэш не трогать.
+3. Не прерывать сборку (Ctrl+C, закрытие окна, перезагрузка) пока пишется loom-кэш — именно
+   это оставило битый джар и `.tmp`-осколок.
+
+Код правки не потребовал: дамп изменений этого коммита — только этот раздел.
