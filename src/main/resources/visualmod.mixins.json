@@ -42,7 +42,6 @@
     "PlayerBadgeMixin",
     "PlayerListBadgeMixin",
     "TabPingMixin",
-    "TabPlusMixin",
     "TabSelfMixin",
     "WelcomeBannerMixin",
     "KillEffectAttackMixin",

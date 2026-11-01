@@ -14,6 +14,7 @@ public class ClickGUI extends Module {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.currentScreen == null) {
             if (VisualsMod.clickGUI == null) VisualsMod.clickGUI = new com.visualmod.gui.ClickGUI();
+            GUIAnimations.playOpen();
             mc.setScreen(VisualsMod.clickGUI);
         }
     }

@@ -13,7 +13,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import com.visualmod.screen.AccountScreen;
 import com.visualmod.screen.HolyWorldScreen;
 import com.visualmod.screen.FunTimeScreen;
+import com.visualmod.util.HudIcons;
 import com.visualmod.util.HudStyle;
+import net.minecraft.client.gui.tooltip.Tooltip;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,7 +24,10 @@ import java.util.List;
 public class MainMenuButtonMixin extends Screen {
 
     private static final Identifier BG = Identifier.of("visualmod", "textures/gui/bg_hv.png");
+    private static final int MAIN_W = 188, MAIN_H = 22, ICON = 24, ICON_GAP = 6;
+
     private final List<ClickableWidget> customMenuButtons = new ArrayList<>();
+    private final List<Icon> buttonIcons = new ArrayList<>();
     private boolean buttonsInitialized = false;
 
     protected MainMenuButtonMixin(Text title) {
@@ -36,63 +41,69 @@ public class MainMenuButtonMixin extends Screen {
 
     private void clearAndInitCustom() {
         this.customMenuButtons.clear();
+        this.buttonIcons.clear();
         this.clearChildren();
 
-        int btnWidth = 160;
-        int btnHeight = 20;
-        int startX = this.width / 2 - (btnWidth / 2);
-
+        int startX = this.width / 2 - MAIN_W / 2;
         int startY = this.height / 2 - 50;
 
-        ButtonWidget sp = ButtonWidget.builder(Text.of("Singleplayer"), btn -> {
+        addMain("Singleplayer", "person", btn -> {
             if (this.client != null) this.client.setScreen(new net.minecraft.client.gui.screen.world.SelectWorldScreen(this));
-        }).dimensions(startX, startY, btnWidth, btnHeight).build();
-        this.addDrawableChild(sp); customMenuButtons.add(sp);
-        startY += 24;
-
-        ButtonWidget mp = ButtonWidget.builder(Text.of("Multiplayer"), btn -> {
+        }, startX, startY, false);
+        addMain("Multiplayer", "server", btn -> {
             if (this.client != null) this.client.setScreen(new net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen(this));
-        }).dimensions(startX, startY, btnWidth, btnHeight).build();
-        this.addDrawableChild(mp); customMenuButtons.add(mp);
-        startY += 24;
-
-        ButtonWidget accBtn = ButtonWidget.builder(Text.of("AltManager"), b -> this.client.setScreen(new AccountScreen(this)))
-                .dimensions(startX, startY, btnWidth, btnHeight).build();
-        this.addDrawableChild(accBtn); customMenuButtons.add(accBtn);
-        startY += 24;
-
-        ButtonWidget hwBtn = ButtonWidget.builder(Text.of("HolyWorld"), b -> {
-            if (this.client != null) {
-                com.visualmod.screen.HolyWorldScreen.connectAndCommand("msk.holyworld.ru", null);
-            }
-        }).dimensions(startX, startY, btnWidth, btnHeight).build();
-        this.addDrawableChild(hwBtn); customMenuButtons.add(hwBtn);
-        startY += 24;
-
-        ButtonWidget ftBtn = ButtonWidget.builder(Text.of("Funt1m1"), b -> this.client.setScreen(new FunTimeScreen(this)))
-                .dimensions(startX, startY, btnWidth, btnHeight).build();
-        this.addDrawableChild(ftBtn); customMenuButtons.add(ftBtn);
-
-        int topRightX = this.width - 110;
-
-        ButtonWidget optBtn = ButtonWidget.builder(Text.of("Настройки"), btn -> this.client.setScreen(new net.minecraft.client.gui.screen.option.OptionsScreen(this, this.client.options)))
-                .dimensions(topRightX, 10, 100, btnHeight).build();
-        this.addDrawableChild(optBtn); customMenuButtons.add(optBtn);
-
-        ButtonWidget qBtn = ButtonWidget.builder(Text.of("Выйти"), btn -> {
+        }, startX, startY + MAIN_H + 6, false);
+        addMain("Quit", "power", btn -> {
             if (this.client != null) this.client.scheduleStop();
-        }).dimensions(topRightX, 34, 100, btnHeight).build();
-        this.addDrawableChild(qBtn); customMenuButtons.add(qBtn);
+        }, startX, startY + (MAIN_H + 6) * 2, true);
 
+        addIcon("key", Text.of("AltManager"), b -> this.client.setScreen(new AccountScreen(this)));
+        addIcon("compass", Text.of("HolyWorld"), b ->
+                com.visualmod.screen.HolyWorldScreen.connectAndCommand("msk.holyworld.ru", null));
+        addIcon("star", Text.of("Funt1m1"), b -> this.client.setScreen(new FunTimeScreen(this)));
+        addIcon("gear", Text.of("Настройки"), b -> this.client.setScreen(
+                new net.minecraft.client.gui.screen.option.OptionsScreen(this, this.client.options)));
         if (com.visualmod.util.LauncherBackground.hasAny()) {
-            ButtonWidget bgBtn = ButtonWidget.builder(Text.of("Смена фона игры"),
-                            btn -> this.client.setScreen(new com.visualmod.screen.GameBackgroundScreen(this)))
-                    .dimensions(topRightX, 58, 100, btnHeight).build();
-            this.addDrawableChild(bgBtn); customMenuButtons.add(bgBtn);
+            addIcon("eye", Text.of("Смена фона игры"), b -> this.client.setScreen(
+                    new com.visualmod.screen.GameBackgroundScreen(this)));
         }
 
+        layoutIcons();
         this.buttonsInitialized = true;
     }
+
+    private void addMain(String label, String icon, java.util.function.Consumer<net.minecraft.client.gui.widget.ButtonWidget> action,
+                         int x, int y, boolean danger) {
+        ButtonWidget b = ButtonWidget.builder(Text.of(label), action::accept)
+                .dimensions(x, y, MAIN_W, MAIN_H).build();
+        this.addDrawableChild(b);
+        customMenuButtons.add(b);
+        buttonIcons.add(new Icon(b, icon, danger));
+    }
+
+    /** Маленькая квадратная кнопка без подписи — ряд под главными. */
+    private void addIcon(String icon, Text tooltip,
+                         java.util.function.Consumer<net.minecraft.client.gui.widget.ButtonWidget> action) {
+        ButtonWidget b = ButtonWidget.builder(tooltip, action::accept)
+                .dimensions(0, this.height - ICON - 12, ICON, ICON).build();
+        b.setTooltip(Tooltip.of(tooltip));
+        this.addDrawableChild(b);
+        customMenuButtons.add(b);
+        buttonIcons.add(new Icon(b, icon, false));
+    }
+
+    private void layoutIcons() {
+        int n = buttonIcons.size() - 3;
+        int total = n * ICON + (n - 1) * ICON_GAP;
+        int x = this.width / 2 - total / 2;
+        for (int i = 3; i < buttonIcons.size(); i++) {
+            ClickableWidget w = buttonIcons.get(i).button;
+            w.setX(x + (i - 3) * (ICON + ICON_GAP));
+            w.setY(this.height - ICON - 12);
+        }
+    }
+
+    private record Icon(ClickableWidget button, String glyph, boolean danger) {}
 
     @Inject(method = "render", at = @At("HEAD"), cancellable = true)
     private void visuals$renderMainMenuBackground(net.minecraft.client.gui.DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
@@ -103,8 +114,11 @@ public class MainMenuButtonMixin extends Screen {
         long timeMs = System.currentTimeMillis();
 
         com.visualmod.util.GameBackground.draw(context, BG, this.width, this.height);
+        // Размыть уже нарисованное нельзя — весь GUI уходит во фреймбуфер только после render().
+        // Поэтому «мыло» референса собираем тонировкой: плотное затемнение + мягкий верхний градиент.
+        context.fill(0, 0, this.width, this.height, 0xB307080C);
 
-        context.fillGradient(0, this.height * 2 / 3, this.width, this.height, 0x00000000, 0x2AFF7A00);
+        context.fillGradient(0, this.height * 2 / 3, this.width, this.height, 0x00000000, 0x2AFFFFFF);
         context.fillGradient(0, 0, this.width, 56, 0x66000000, 0x00000000);
 
         for (int i = 0; i < 26; i++) {
@@ -123,7 +137,7 @@ public class MainMenuButtonMixin extends Screen {
         }
 
         String titleMain = "HOLY VISUALS";
-        String titleVer = "  1.21.4";
+        String titleVer = "  1.21.11";
         float scale = 1.6F;
         int fullW = this.textRenderer.getWidth(titleMain) + this.textRenderer.getWidth(titleVer);
 
@@ -132,33 +146,47 @@ public class MainMenuButtonMixin extends Screen {
         float titleY = 24.0F / scale;
         context.getMatrices().scale(scale, scale);
         context.drawTextWithShadow(this.textRenderer, "§l" + titleMain, (int) titleX, (int) titleY, 0xFFFFFFFF);
-        context.drawTextWithShadow(this.textRenderer, "§l§6" + titleVer, (int) titleX + this.textRenderer.getWidth(titleMain), (int) titleY, 0xFFFF8800);
+        context.drawTextWithShadow(this.textRenderer, "§l§5" + titleVer, (int) titleX + this.textRenderer.getWidth(titleMain), (int) titleY, HudStyle.ACCENT);
         context.getMatrices().popMatrix();
 
         context.drawCenteredTextWithShadow(this.textRenderer, "§7Visual client для HolyWorld",
                 this.width / 2, 46, 0xFF8A8A8A);
 
         float pulse = 0.5f + 0.5f * (float) Math.sin(timeMs * 0.0024);
-        for (ClickableWidget button : customMenuButtons) {
+        for (Icon icon : buttonIcons) {
+            ClickableWidget button = icon.button();
             boolean hovered = mouseX >= button.getX() && mouseY >= button.getY()
                     && mouseX < button.getX() + button.getWidth() && mouseY < button.getY() + button.getHeight();
 
-            float r = 9f;
             int x = button.getX(), y = button.getY(), w = button.getWidth(), h = button.getHeight();
+            float r = w == h ? 8f : HudStyle.pill(h);
 
             if (hovered) {
-                HudStyle.fillRounded(context, x - 4, y - 4, w + 8, h + 8, r + 4,
-                        HudStyle.pack(1f, 0.53f, 0.10f, 0.16f));
-                HudStyle.fillRounded(context, x - 2, y - 2, w + 4, h + 4, r + 2,
-                        HudStyle.pack(1f, 0.60f, 0.15f, 0.28f));
+                int glow = icon.danger() ? HudStyle.pack(1f, 0.30f, 0.32f, 0.22f)
+                        : HudStyle.withAlpha(HudStyle.ACCENT, 0x38);
+                HudStyle.fillRounded(context, x - 3, y - 3, w + 6, h + 6, r + 3, glow);
             }
 
-            HudStyle.glassPanel(context, x, y, w, h, r, hovered ? 0.7f + 0.3f * pulse : pulse * 0.45f);
+            int base = icon.danger() ? 0xE63A1520 : 0xE6111520;
+            // lerpColor выбрасывает альфу, поэтому тонировку возвращаем отдельно.
+            int face = hovered ? HudStyle.withAlpha(HudStyle.lerpColor(base, 0xFFFFFFFF, 0.12f), 0xE6) : base;
+            HudStyle.fillRounded(context, x, y, w, h, r, face);
 
-            int textColor = hovered ? 0xFFFFC27A : 0xFFF2F2F2;
-            int textWidth = this.textRenderer.getWidth(button.getMessage());
-            context.drawTextWithShadow(this.textRenderer, button.getMessage(),
-                    x + (w / 2) - (textWidth / 2), y + (h / 2) - 4, textColor);
+            int glyphColor = hovered ? HudStyle.ACCENT : 0xFFB4BAC8;
+            int textWidth = button.getWidth() == button.getHeight() ? 0 : this.textRenderer.getWidth(button.getMessage());
+            int groupW = textWidth == 0 ? HudIcons.SIZE : HudIcons.SIZE + 5 + textWidth;
+            int gx = x + (w - groupW) / 2, gy = y + (h - HudIcons.SIZE) / 2;
+            HudIcons.draw(context, icon.glyph(), gx, gy, glyphColor);
+            if (textWidth > 0) {
+                context.drawTextWithShadow(this.textRenderer, button.getMessage(),
+                        gx + HudIcons.SIZE + 5, y + (h - this.textRenderer.fontHeight) / 2,
+                        hovered ? 0xFFFFFFFF : 0xFFF2F2F2);
+            }
+            if (hovered && pulse > 0f) {
+                // лёгкая «живая» подсветка нижней кромки, чтобы плашка не была плоской
+                HudStyle.fillRounded(context, x + 6, y + h - 1.5f, w - 12, 1.5f, 0.75f,
+                        HudStyle.withAlpha(icon.danger() ? 0xFFFF5566 : HudStyle.ACCENT, (int) (0x40 + 0x40 * pulse)));
+            }
         }
 
         ci.cancel();

@@ -1,5 +1,6 @@
 package com.visualmod.module.modules.hud;
 
+import com.visualmod.VisualsMod;
 import com.visualmod.module.Module;
 import com.visualmod.module.settings.Configurable;
 import com.visualmod.module.settings.ModeSetting;
@@ -9,6 +10,7 @@ import com.visualmod.sound.ModSounds;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.sound.PositionedSoundInstance;
 import net.minecraft.sound.SoundEvent;
+import net.minecraft.sound.SoundEvents;
 
 import java.util.Arrays;
 import java.util.List;
@@ -63,6 +65,21 @@ public class GUIAnimations extends Module implements Configurable {
         if (isEnabled()) {
             enabledAt = System.currentTimeMillis();
         }
+    }
+
+    /**
+     * Звук открытия GUI по клавише. GUIAnimations выключен — играем мягкий дефолт,
+     * включён с Sound=NONE — молчим: NONE это и есть явный выбор пользователя.
+     */
+    public static void playOpen() {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.getSoundManager() == null || VisualsMod.moduleManager == null) return;
+        GUIAnimations ga = VisualsMod.moduleManager.getModule(GUIAnimations.class);
+        if (ga != null && ga.isEnabled()) {
+            if (sound != Sound.NONE) ga.playSound();
+            return;
+        }
+        mc.getSoundManager().play(PositionedSoundInstance.ui(SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME, 0.35f, 1.5f));
     }
 
     private void playSound() {

@@ -5,10 +5,10 @@ import com.visualmod.module.settings.ColorSetting;
 import com.visualmod.module.settings.Configurable;
 import com.visualmod.module.settings.ModeSetting;
 import com.visualmod.module.settings.Setting;
-import com.visualmod.module.settings.SliderSetting;
-import com.visualmod.module.settings.ToggleSetting;
 import com.visualmod.util.AlbumArt;
 import com.visualmod.util.BrowserMedia;
+import com.visualmod.util.HudIcons;
+import com.visualmod.util.HudScale;
 import com.visualmod.util.HudStyle;
 import com.visualmod.util.MusicManager;
 import net.minecraft.client.MinecraftClient;
@@ -17,28 +17,36 @@ import net.minecraft.client.gui.DrawContext;
 
 import java.util.List;
 
+/**
+ * Карточка «сейчас играет»: слева обложка, справа название, прогресс и ряд кнопок.
+ * Переключений вида нет — prev/play/next/repeat нажимаются прямо на карточке, пока
+ * экранный курсор свободен (открытый чат, редактор HUD). В первом лице курсор захвачен
+ * игрой, и клика по HUD не бывает.
+ */
 public class MusicOverlay extends Module implements Configurable {
 
     public static int source = 0;
-    public static int layout = 0;
-    public static int order = 0;
-    public static boolean loose = false;
-    public static boolean showDiag = false;
-    public static double maxWidth = 170;
-    public static int accent = 0xFFFF8800;
-    public static boolean cover = true;
-    public static boolean coverTint = true;
-    public static double coverDim = 45;
+    public static int accent = HudStyle.ACCENT;
 
     private static final String[] SOURCES = {"LOCAL", "BROWSER", "SMTC"};
-    private static final String[] LAYOUTS = {"PILL", "CARD"};
-    private static final String[] ORDERS = {"AUTO", "TRACK - ARTIST", "ARTIST - TRACK"};
-    private static final float TITLE_SCALE = 1.4f;
+    private static final int PAD = 6, COVER = 40, COL_GAP = 6;
+    private static final int BTN = 14, BTN_GAP = 5;
+    private static final int TEXT_MIN = 60, TEXT_MAX = 92;
+    private static final int HEIGHT = 67;
+    private static final float TITLE_SCALE = 1.15f;
+    private static final int PREV = 0, PLAY = 1, NEXT = 2, REPEAT = 3;
+
+    /** Геометрия последнего кадра: по ней проверяем наведение и клики. */
+    private static int lastX, lastY;
+    private static float lastScale = 1f;
+    private static final int[] BTN_X = new int[4];
+    private static int btnY;
+    private static boolean drawn;
 
     private final MinecraftClient mc = MinecraftClient.getInstance();
 
     private static final class Info {
-        String title = "", artist = "", site = "", diag = "";
+        String title = "", artist = "", site = "";
         boolean playing = true;
         long posMs, endMs, stamp;
 
@@ -49,7 +57,7 @@ public class MusicOverlay extends Module implements Configurable {
     private long shownAt;
 
     public MusicOverlay() {
-        super("MusicOverlay", "Now-playing panel: own playlist, browser tab title or Windows SMTC", Category.HUD);
+        super("MusicOverlay", "Now-playing card with playback buttons", Category.HUD);
     }
 
     @Override
@@ -59,26 +67,12 @@ public class MusicOverlay extends Module implements Configurable {
                     source = i;
                     sync();
                 }),
-                new ModeSetting("Layout", LAYOUTS, () -> layout, i -> layout = i),
-                new ToggleSetting("Cover", () -> cover, v -> cover = v),
-                new ToggleSetting("Cover Tint", () -> coverTint, v -> coverTint = v),
-                new SliderSetting("Cover Dim", 0, 85, 5, () -> coverDim, v -> coverDim = v, "%"),
-                new ModeSetting("Order", ORDERS, () -> order, i -> order = i),
-                new ModeSetting("Loose", new String[]{"OFF", "ON"}, () -> loose ? 1 : 0, i -> {
-                    loose = (i == 1);
-                    BrowserMedia.setLoose(loose);
-                }),
-                new ToggleSetting("Debug", () -> showDiag, v -> showDiag = v),
-                new ToggleSetting("Drop Import", () -> com.visualmod.util.FileDropHandler.accept, v -> com.visualmod.util.FileDropHandler.accept = v),
-                new ToggleSetting("Play On Drop", () -> com.visualmod.util.FileDropHandler.autoPlay, v -> com.visualmod.util.FileDropHandler.autoPlay = v),
-                new SliderSetting("Max Width", 90, 260, 5, () -> maxWidth, v -> maxWidth = v, "px"),
                 new ColorSetting("Accent", () -> accent, c -> accent = c)
         );
     }
 
     @Override
     public void onEnable() {
-        BrowserMedia.setLoose(loose);
         sync();
     }
 
@@ -87,6 +81,7 @@ public class MusicOverlay extends Module implements Configurable {
         BrowserMedia.stop();
         MusicManager.stop();
         AlbumArt.setTrack(null);
+        drawn = false;
     }
 
     private void sync() {
@@ -99,12 +94,11 @@ public class MusicOverlay extends Module implements Configurable {
     }
 
     public void render(DrawContext ctx, int x, int y) {
-        if (!isEnabled() || mc.player == null || mc.textRenderer == null) return;
+        if (!isEnabled() || mc.player == null || mc.textRenderer == null) { drawn = false; return; }
         sync();
         gather();
-        if (shown.idle() && !showDiag && source == 0) return;
-        if (layout == 1) drawCard(ctx, x, y);
-        else drawPill(ctx, x, y);
+        if (shown.idle() && source == 0) { drawn = false; return; }
+        drawCard(ctx, x, y);
     }
 
     public void render(DrawContext ctx) { render(ctx, 10, 108); }
@@ -121,14 +115,9 @@ public class MusicOverlay extends Module implements Configurable {
             n.stamp = System.currentTimeMillis();
         } else {
             BrowserMedia.Track t = BrowserMedia.track();
-            if (t == null) {
-                n.playing = false;
-                n.title = "";
-            } else {
-                String a = t.artist, b = t.title;
-                if (order == 2 && !a.isEmpty()) { String sw = a; a = b; b = sw; }
-                n.title = b;
-                n.artist = a;
+            if (t != null) {
+                n.title = t.title;
+                n.artist = t.artist;
                 n.site = t.site;
                 n.playing = t.playing;
                 n.posMs = t.posMs;
@@ -144,8 +133,124 @@ public class MusicOverlay extends Module implements Configurable {
         shown.posMs = n.posMs;
         shown.endMs = n.endMs;
         shownAt = System.currentTimeMillis();
-        if (showDiag) shown.diag = source == 0 ? "local" : BrowserMedia.diag();
-        else shown.diag = "";
+    }
+
+    private void drawCard(DrawContext ctx, int x, int y) {
+        TextRenderer tr = mc.textRenderer;
+        lastX = x;
+        lastY = y;
+        lastScale = HudPosition.getScale(getName())
+                * com.visualmod.module.modules.util.Scene.widgetScale();
+
+        String title = shown.idle() ? "нет трека" : shown.title;
+        String sub = shown.artist.isEmpty() ? shown.site
+                : (shown.site.isEmpty() ? shown.artist : shown.artist + " · " + shown.site);
+        title = fit(title, TEXT_MAX);
+        sub = fit(sub, TEXT_MAX);
+        double p = progress();
+        String time = p < 0 ? "" : mmss(positionNow()) + " / " + mmss(shown.endMs);
+
+        int rowW = BTN * 4 + BTN_GAP * 3;
+        int textW = Math.max(rowW, Math.min(TEXT_MAX, Math.max(tr.getWidth(title) + 16,
+                tr.getWidth(sub) + tr.getWidth(time) + 6)));
+        textW = Math.max(textW, TEXT_MIN);
+        int w = PAD + COVER + COL_GAP + textW + PAD;
+        int tx = x + PAD + COVER + COL_GAP;
+
+        drawn = true;
+        HudStyle.drawPanel(ctx, x, y, w, HEIGHT, 1f, 10f);
+
+        HudStyle.fillRounded(ctx, x + PAD, y + PAD, 12, 12, HudStyle.pill(12), accent);
+        HudIcons.draw(ctx, "note", x + PAD + 1.5f, y + PAD + 1.5f, 0xFF101018);
+        drawScaled(ctx, title, x + PAD + 16, y + PAD + 1, TITLE_SCALE,
+                shown.playing ? HudStyle.TEXT : HudStyle.TEXT_DIM);
+
+        int coverY = y + PAD + 15;
+        if (source == 0 && AlbumArt.ready()) {
+            AlbumArt.draw(ctx, x + PAD, coverY, COVER, COVER);
+            if (!shown.playing) ctx.fill(x + PAD, coverY, x + PAD + COVER, coverY + COVER, 0x80000000);
+        } else {
+            HudStyle.fillRounded(ctx, x + PAD, coverY, COVER, COVER, 8f, 0xB312151C);
+            HudIcons.draw(ctx, shown.playing ? "note" : "pause",
+                    x + PAD + (COVER - HudIcons.SIZE) / 2f, coverY + (COVER - HudIcons.SIZE) / 2f,
+                    HudStyle.withAlpha(accent, 0xCC));
+        }
+
+        ctx.drawTextWithShadow(tr, sub, tx, coverY + 1, HudStyle.TEXT_DIM);
+        if (!time.isEmpty()) {
+            ctx.drawTextWithShadow(tr, time, x + w - PAD - tr.getWidth(time), coverY + 1, HudStyle.TEXT_DIM);
+        }
+        if (p >= 0) {
+            ctx.fill(tx, coverY + 13, tx + textW, coverY + 15, 0x4DFFFFFF);
+            ctx.fill(tx, coverY + 13, tx + Math.max(2, (int) (textW * p)), coverY + 15, accent);
+        }
+
+        btnY = coverY + COVER - BTN;
+        int bx = tx;
+        for (int i = 0; i < 4; i++) {
+            BTN_X[i] = bx;
+            bx += BTN + BTN_GAP;
+        }
+        drawButton(ctx, PREV, "prev", false);
+        drawButton(ctx, PLAY, shown.playing ? "pause" : "play", false);
+        drawButton(ctx, NEXT, "next", false);
+        drawButton(ctx, REPEAT, "repeat", source == 0 && MusicManager.repeat);
+    }
+
+    private void drawButton(DrawContext ctx, int i, String glyph, boolean on) {
+        int x = BTN_X[i];
+        float r = HudStyle.pill(BTN);
+        if (hovered(i)) HudStyle.fillRounded(ctx, x - 2, btnY - 2, BTN + 4, BTN + 4, r + 2,
+                HudStyle.withAlpha(accent, 0x4D));
+        HudStyle.fillRounded(ctx, x, btnY, BTN, BTN, r, on ? HudStyle.withAlpha(accent, 0xE6) : 0xB320242E);
+        float off = (BTN - HudIcons.SIZE) / 2f;
+        HudIcons.draw(ctx, glyph, x + off, btnY + off, on ? 0xFF101018 : HudStyle.TEXT);
+    }
+
+    /** Клик по кнопке карточки. Координаты — экранные (GUI), как в mouseClicked. */
+    public static boolean handleClick(double mx, double my) {
+        if (!drawn) return false;
+        double lx = toLocal(mx, lastX, lastScale);
+        double ly = toLocal(my, lastY, lastScale);
+        for (int i = 0; i < 4; i++) {
+            if (lx >= BTN_X[i] - 2 && lx <= BTN_X[i] + BTN + 2
+                    && ly >= btnY - 2 && ly <= btnY + BTN + 2) {
+                press(i);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void press(int i) {
+        switch (i) {
+            case PREV -> { if (source == 0) MusicManager.prev(); else BrowserMedia.prev(); }
+            case NEXT -> { if (source == 0) MusicManager.next(); else BrowserMedia.next(); }
+            case REPEAT -> { if (source == 0) MusicManager.repeat = !MusicManager.repeat; }
+            default -> {
+                if (source != 0) {
+                    BrowserMedia.togglePlayPause();
+                } else if (MusicManager.isPlaying) {
+                    MusicManager.stop();
+                } else {
+                    MusicManager.play();
+                }
+            }
+        }
+    }
+
+    private static boolean hovered(int i) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.getWindow() == null || mc.mouse.isCursorLocked()) return false;
+        double s = mc.getWindow().getScaleFactor();
+        double lx = toLocal(mc.mouse.getX() / s, lastX, lastScale);
+        double ly = toLocal(mc.mouse.getY() / s, lastY, lastScale);
+        return lx >= BTN_X[i] && lx <= BTN_X[i] + BTN && ly >= btnY && ly <= btnY + BTN;
+    }
+
+    /** Экранный курсор → локальные координаты карточки: масштаб HudRenderer идёт вокруг её угла. */
+    private static double toLocal(double v, int anchor, float scale) {
+        return HudScale.on(scale) ? anchor + (v - anchor) / scale : v;
     }
 
     private long positionNow() {
@@ -159,119 +264,12 @@ public class MusicOverlay extends Module implements Configurable {
         return positionNow() / (double) shown.endMs;
     }
 
-    private void drawPill(DrawContext ctx, int x, int y) {
-        TextRenderer tr = mc.textRenderer;
-        String main = shown.idle() ? (shown.diag.isEmpty() ? "нет трека" : shown.diag) : shown.title;
-        String head = main;
-        if (!shown.artist.isEmpty()) head += " \u2014 " + shown.artist;
-        int maxW = (int) maxWidth;
-        int color = shown.playing ? HudStyle.TEXT : HudStyle.TEXT_DIM;
-        int acc = accentColor();
-        boolean art = hasCover();
-        int w = textWidth(head, maxW);
-        int h = 18;
-        int pad = art ? 30 : 20;
-        HudStyle.drawPanelRounded(ctx, x, y, w + pad, h, 1f, acc);
-        if (art) AlbumArt.draw(ctx, x + 5, y + 3, 12, 12);
-        else HudStyle.fillRounded(ctx, x + 7, y + 7, 4, 4, 2f, shown.playing ? acc : HudStyle.TEXT_DIM);
-        ctx.drawTextWithShadow(tr, fit(head, maxW), x + (art ? 21 : 14), y + 5, color);
-        if (!shown.playing) dim(ctx, x, y, w + pad, h);
-    }
-
-    private void drawCard(DrawContext ctx, int x, int y) {
-        TextRenderer tr = mc.textRenderer;
-        int acc = accentColor();
-        boolean art = hasCover();
-        int maxW = (int) maxWidth;
-        String title = shown.idle() ? "нет трека" : shown.title;
-        String sub = shown.artist.isEmpty() ? shown.site
-                : (shown.site.isEmpty() ? shown.artist : shown.artist + " \u00b7 " + shown.site);
-        double p = progress();
-        String time = p < 0 ? "" : mmss(positionNow()) + " / " + mmss(shown.endMs);
-
-        int titleW = (int) Math.ceil(tr.getWidth(title) * TITLE_SCALE);
-        int timeW = tr.getWidth(time);
-        int cw = Math.max(110, Math.max(titleW,
-                Math.max(tr.getWidth(sub) + timeW + (timeW > 0 ? 8 : 0), tr.getWidth(shown.diag))));
-        cw = Math.min(cw, maxW);
-        int w = cw + 16;
-        int titleH = (int) Math.ceil(9 * TITLE_SCALE);
-        boolean row2 = !sub.isEmpty() || timeW > 0;
-        int h = 6 + titleH + (row2 ? 11 : 0) + (p >= 0 ? 9 : 0) + (shown.diag.isEmpty() ? 0 : 10) + 5;
-        if (art) h = Math.max(h, 46);
-        HudStyle.drawPanelRounded(ctx, x, y, w, h, 1f, acc);
-        // Обложка и затемнение кладутся в отложенный пакет DrawContext, а панели HudStyle рисуются
-        // сразу: внутри пакета порядок = порядок вызовов, поэтому картинку добавляем до текста,
-        // иначе она ляжет поверх надписей.
-        if (art) {
-            AlbumArt.draw(ctx, x + 2, y + 2, w - 4, h - 4);
-            ctx.fill(x + 2, y + 2, x + w - 2, y + h - 2, scrim());
-        }
-
-        int row = y + 5;
-        drawScaled(ctx, fit(title, (int) (maxW / TITLE_SCALE)), x + 8, row, TITLE_SCALE,
-                shown.playing ? HudStyle.TEXT : HudStyle.TEXT_DIM);
-        row += titleH + 2;
-        if (row2) {
-            ctx.drawTextWithShadow(tr, fit(sub, cw - timeW - (timeW > 0 ? 8 : 0)), x + 8, row, HudStyle.TEXT_DIM);
-            if (timeW > 0) ctx.drawTextWithShadow(tr, time, x + 8 + cw - timeW, row, HudStyle.TEXT_DIM);
-            row += 10;
-        }
-        if (p >= 0) {
-            if (art) barFlat(ctx, x + 8, row, cw, p, acc);
-            else drawBar(ctx, x + 8, row, cw, p);
-            row += 9;
-        }
-        if (!shown.diag.isEmpty()) {
-            ctx.drawTextWithShadow(tr, fit(shown.diag, cw), x + 8, row, HudStyle.TEXT_DIM);
-        }
-        if (!shown.playing) {
-            if (art) ctx.fill(x + 2, y + 2, x + w - 2, y + h - 2, 0x60000000);
-            else dim(ctx, x, y, w, h);
-        }
-    }
-
-    private boolean hasCover() {
-        return cover && source == 0 && AlbumArt.ready();
-    }
-
-    /** Акцент панели: средний тон обложки, если включена тонировка, иначе цвет из настройки. */
-    private int accentColor() {
-        return coverTint && source == 0 && AlbumArt.avgColor() != 0 ? AlbumArt.avgColor() : accent;
-    }
-
-    private int scrim() {
-        double k = Math.min(85, Math.max(0, coverDim)) / 85.0;
-        int a = Math.min(245, (int) (0x66 + (0xE0 - 0x66) * k));
-        return a << 24;
-    }
-
-    /** Полоса прогресса прямоугольниками: rounded-вариант рисуется сразу и пропал бы под обложкой. */
-    private void barFlat(DrawContext ctx, int x, int y, int w, double p, int acc) {
-        ctx.fill(x, y + 1, x + w, y + 4, 0x50FFFFFF);
-        ctx.fill(x, y + 1, x + Math.max(2, (int) (w * p)), y + 4, acc);
-    }
-
     private void drawScaled(DrawContext ctx, String s, int x, int y, float scale, int color) {
         ctx.getMatrices().pushMatrix();
         ctx.getMatrices().translate(x, y);
         ctx.getMatrices().scale(scale, scale);
         ctx.drawTextWithShadow(mc.textRenderer, s, 0, 0, color);
         ctx.getMatrices().popMatrix();
-    }
-
-    private void drawBar(DrawContext ctx, int x, int y, int w, double p) {
-        HudStyle.fillRounded(ctx, x, y + 1, w, 3, 1.5f, 0x40FFFFFF);
-        int fill = HudStyle.lerpColor(accent, 0xFFFFFFFF, 0.15f);
-        HudStyle.fillRounded(ctx, x, y + 1, Math.max(2, (int) (w * p)), 3, 1.5f, fill);
-    }
-
-    private void dim(DrawContext ctx, int x, int y, int w, int h) {
-        HudStyle.fillRounded(ctx, x + 2, y + 2, w - 4, h - 4, 3f, 0x60000000);
-    }
-
-    private int textWidth(String s, int maxW) {
-        return Math.min(mc.textRenderer.getWidth(s), maxW);
     }
 
     private static String printable(String s) {

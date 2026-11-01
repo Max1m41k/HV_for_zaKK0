@@ -83,7 +83,7 @@ public class ChatCommandMixin {
                                 ConfigManager.moduleManager.getModuleByName(modName);
 
                         if (key == null) {
-                            if (player != null) player.sendMessage(Text.of("§d[HolyVisuals] §cНеизвестная клавиша: §e" + args[2] + " §c(пример: z, f6, rshift, DEL, INS, PGUP, PRTSC)"), false);
+                            if (player != null) player.sendMessage(Text.of("§d[HolyVisuals] §cНеизвестная клавиша: §e" + args[2] + " §c(пример: z, f6, rshift, DEL, INS, PGUP, PRTSC или символ клавиши: ` - = [ ] ; ' , /)"), false);
                         } else if (key.equals(com.visualmod.util.KeyNames.RESERVED_INSERT)) {
                             if (player != null) player.sendMessage(Text.of("§d[HolyVisuals] §cInsert зарезервирован под разблокировку SafeMode."), false);
                         } else if (target == null) {
@@ -115,7 +115,7 @@ public class ChatCommandMixin {
                     if (action.equals("add") && args.length > 3) {
                         String key = com.visualmod.util.KeyNames.parseUserInput(args[2]);
                         if (key == null) {
-                            if (player != null) player.sendMessage(Text.of("§d[HolyVisuals] §cНеизвестная клавиша: §e" + args[2] + " §c(пример: z, f6, rshift, DEL, INS, PGUP, PRTSC)"), false);
+                            if (player != null) player.sendMessage(Text.of("§d[HolyVisuals] §cНеизвестная клавиша: §e" + args[2] + " §c(пример: z, f6, rshift, DEL, INS, PGUP, PRTSC или символ клавиши: ` - = [ ] ; ' , /)"), false);
                             ci.cancel();
                             return;
                         }

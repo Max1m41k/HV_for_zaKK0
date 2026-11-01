@@ -100,6 +100,12 @@ public final class HudIcons {
             case "heart" -> heart(ctx, ix, iy, color);
             case "sun" -> sun(ctx, ix, iy, color);
             case "cloud" -> cloud(ctx, ix, iy, color);
+            case "power" -> power(ctx, ix, iy, color);
+            case "play" -> play(ctx, ix, iy, color);
+            case "pause" -> pause(ctx, ix, iy, color);
+            case "prev" -> { chevL(ctx, ix, iy, color, ix + 2); chevL(ctx, ix, iy, color, ix + 5); }
+            case "next" -> { chevR(ctx, ix, iy, color, ix + 6); chevR(ctx, ix, iy, color, ix + 3); }
+            case "repeat" -> repeat(ctx, ix, iy, color);
             default -> HudStyle.fillRounded(ctx, ix + 3, iy + 3, 3, 3, 1.5f, color);
         }
     }
@@ -305,5 +311,46 @@ public final class HudIcons {
         HudStyle.fillRounded(ctx, x + 1, y + 4, 7, 3, 1.5f, c);
         HudStyle.fillRounded(ctx, x + 2, y + 2, 3, 3, 1.5f, c);
         HudStyle.fillRounded(ctx, x + 5, y + 1, 3, 3, 1.5f, c);
+    }
+
+    private static void power(DrawContext ctx, int x, int y, int c) {
+        HudStyle.ring(ctx, x + 4.5f, y + 4.5f, 2.6f, 3.8f, 120f, 300f, c);
+        ctx.fill(x + 4, y, x + 5, y + 5, c);
+    }
+
+    private static void play(DrawContext ctx, int x, int y, int c) {
+        for (int i = 0; i < 7; i++) ctx.fill(x + 2, y + 1 + i, x + 9 - i, y + 2 + i, c);
+    }
+
+    private static void pause(DrawContext ctx, int x, int y, int c) {
+        ctx.fill(x + 2, y + 1, x + 4, y + 8, c);
+        ctx.fill(x + 6, y + 1, x + 8, y + 8, c);
+    }
+
+    /** «<»: вершина в (px, середина), лучи вправо вверх и вниз. */
+    private static void chevL(DrawContext ctx, int x, int y, int c, int px) {
+        int py = y + 4;
+        for (int i = 0; i < 4; i++) {
+            ctx.fill(px + i, py - i, px + i + 1, py - i + 1, c);
+            ctx.fill(px + i, py + i, px + i + 1, py + i + 1, c);
+        }
+    }
+
+    /** «>»: вершина в (rx, середина), лучи влево вверх и вниз. */
+    private static void chevR(DrawContext ctx, int x, int y, int c, int rx) {
+        int py = y + 4;
+        for (int i = 0; i < 4; i++) {
+            ctx.fill(rx - i, py - i, rx - i + 1, py - i + 1, c);
+            ctx.fill(rx - i, py + i, rx - i + 1, py + i + 1, c);
+        }
+    }
+
+    private static void repeat(DrawContext ctx, int x, int y, int c) {
+        ctx.fill(x + 2, y + 1, x + 8, y + 2, c);
+        ctx.fill(x + 1, y + 7, x + 7, y + 8, c);
+        ctx.fill(x + 7, y + 2, x + 8, y + 4, c);
+        ctx.fill(x + 1, y + 5, x + 2, y + 7, c);
+        ctx.fill(x + 6, y + 0, x + 8, y + 1, c);
+        ctx.fill(x + 1, y + 8, x + 3, y + 9, c);
     }
 }

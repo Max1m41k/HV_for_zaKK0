@@ -76,6 +76,7 @@ public class VisualsMod implements ClientModInitializer {
                     client.setScreen(null);
                 } else if (client.currentScreen == null) {
                     if (clickGUI == null) clickGUI = new ClickGUI();
+                    com.visualmod.module.modules.hud.GUIAnimations.playOpen();
                     client.setScreen(clickGUI);
                 }
             }

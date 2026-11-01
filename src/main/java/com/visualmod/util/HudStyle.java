@@ -15,11 +15,11 @@ import org.joml.Matrix3x2f;
 
 public final class HudStyle {
     /** Не final: {@link Rgb#begin} подменяет его на радужный цвет на время рисования одного модуля. */
-    public static int ACCENT = 0xFFFF8800;
-    public static final int BG = 0x80080810;
+    public static int ACCENT = 0xFF8B5CF6;
+    public static final int BG = 0xB31E222C;
     public static final int SHADOW = 0x44000000;
     public static final int TEXT = 0xFFFFFFFF;
-    public static final int TEXT_DIM = 0xFFAAAAAA;
+    public static final int TEXT_DIM = 0xFFB4BAC8;
 
     private HudStyle() {}
 
@@ -36,6 +36,15 @@ public final class HudStyle {
         return (a << 24) | (BG & 0x00FFFFFF);
     }
 
+    public static int withAlpha(int color, int alpha) {
+        return (Math.min(255, Math.max(0, alpha)) << 24) | (color & 0x00FFFFFF);
+    }
+
+    /** Радиус именно пилюли: половина высоты, а не настройка скругления. */
+    public static float pill(float h) {
+        return h / 2f;
+    }
+
     public static void drawPanel(DrawContext ctx, int x, int y, int w, int h) {
         drawPanel(ctx, x, y, w, h, 1f, HudRadius.active());
     }
@@ -49,7 +58,7 @@ public final class HudStyle {
     }
 
     public static int drawInfoPanel(DrawContext ctx, int x, int y, String label, String value, int valueColor) {
-        return drawInfoPanel(ctx, x, y, label, value, valueColor, HudRadius.active());
+        return drawInfoPanel(ctx, x, y, label, value, valueColor, pill(18));
     }
 
     public static int drawInfoPanel(DrawContext ctx, int x, int y, String label, String value, int valueColor, float radius) {
@@ -92,7 +101,7 @@ public final class HudStyle {
         int w = 9 + iw + lw + 4 + vw + 8, h = 18;
         GUIAnimations.Transform t = GUIAnimations.globalTransform();
         applyTransform(ctx, x, y, w, h, t);
-        drawPanelRounded(ctx, x, y, w, h, t.alpha(), ACCENT, FillStyle.SOLID, HudRadius.active());
+        drawPanelRounded(ctx, x, y, w, h, t.alpha(), ACCENT, FillStyle.SOLID, pill(h));
         if (icon != null) HudIcons.draw(ctx, icon, x + 7, y + (h - HudIcons.SIZE) / 2f, TEXT_DIM);
         ctx.drawTextWithShadow(mc.textRenderer, label, x + 9 + iw, y + 5, TEXT_DIM);
         ctx.drawTextWithShadow(mc.textRenderer, value, x + 9 + iw + lw + 4, y + 5, opaque(valueColor));
@@ -121,9 +130,16 @@ public final class HudStyle {
 
         switch (style) {
             case SOLID -> {
-                int a = (int) (0x80 * Math.min(1f, Math.max(0f, fade)));
+                int a = (int) (0xB3 * Math.min(1f, Math.max(0f, fade)));
                 int bg = (a << 24) | (BG & 0x00FFFFFF);
-                fillRounded(ctx, x, y, w, h, radius, bg);
+                if (h >= 8 && radius >= h / 2f - 0.01f) {
+                    // Пилюля: снаружи — тонкое кольцо акцента, внутри фон. Кольцо кладём первым,
+                    // каждый fillRounded уходит в меш сразу, и задним числом обвести нельзя.
+                    fillRounded(ctx, x, y, w, h, radius, withAlpha(accentColor, 0x5C));
+                    fillRounded(ctx, x + 1, y + 1, w - 2, h - 2, radius - 1, bg);
+                } else {
+                    fillRounded(ctx, x, y, w, h, radius, bg);
+                }
             }
             case GLASS -> {
                 int a = (int) (0x50 * Math.min(1f, Math.max(0f, fade)));

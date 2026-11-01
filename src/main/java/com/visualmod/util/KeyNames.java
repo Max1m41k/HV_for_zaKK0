@@ -46,6 +46,20 @@ public final class KeyNames {
             {"kpdiv", "keypad.divide"}, {"kpdec", "keypad.decimal"}, {"kpeq", "keypad.equal"}, {"kpenter", "keypad.enter"}
     };
 
+    /**
+     * Символы клавиш как их печатают: `.macros add ` …`. И верхний, и нижний регистр
+     * одного и того же символа ведут на одну клавишу — сдвиг на раскладке учитывать глупо.
+     */
+    private static final String[][] CHAR_KEYS = {
+            {"`", "grave.accent"}, {"~", "grave.accent"},
+            {"-", "minus"}, {"_", "minus"}, {"=", "equal"}, {"+", "equal"},
+            {"[", "left.bracket"}, {"{", "left.bracket"}, {"]", "right.bracket"}, {"}", "right.bracket"},
+            {"\\", "backslash"}, {"|", "backslash"},
+            {";", "semicolon"}, {":", "semicolon"}, {"'", "apostrophe"}, {"\"", "apostrophe"},
+            {",", "comma"}, {"<", "comma"}, {".", "period"}, {">", "period"},
+            {"/", "slash"}, {"?", "slash"},
+    };
+
     private static final Map<String, String> ALIASES = new LinkedHashMap<>();
     private static final List<String> TOKENS = new ArrayList<>();
 
@@ -62,10 +76,17 @@ public final class KeyNames {
             ALIASES.put("numpad" + i, "key.keyboard.keypad." + i);
             ALIASES.put("kp" + i, "key.keyboard.keypad." + i);
         }
+        for (String[] p : CHAR_KEYS) {
+            ALIASES.put(p[0], "key.keyboard." + p[1]);
+        }
         TreeSet<String> set = new TreeSet<>();
+        java.util.Set<String> symbols = new java.util.HashSet<>();
+        for (String[] p : CHAR_KEYS) symbols.add(p[0]);
         for (Map.Entry<String, String> e : ALIASES.entrySet()) {
-            // Полные имена с точкой (page.up) в список не просим — в таблице уже есть компактный вариант.
-            if (!e.getKey().contains(".")) set.add(e.getKey().toUpperCase(Locale.ROOT));
+            // В подсказку не просим ни полные имена с точкой (page.up — есть компактный вариант),
+            // ни сами символы: список дополняется табом, и «.`» ломает разбор аргументов.
+            String k = e.getKey();
+            if (!k.contains(".") && !symbols.contains(k)) set.add(k.toUpperCase(Locale.ROOT));
         }
         TOKENS.addAll(set);
     }

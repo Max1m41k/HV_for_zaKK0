@@ -72,6 +72,11 @@ public final class TabSelf {
                 return out;
             }
             for (Text sibling : name.getSiblings()) {
+                // Значок мода — картинка в своём шрифте, перекраска сделает из неё пятно.
+                if (com.visualmod.HolyBadge.isBadgeStyle(sibling.getStyle())) {
+                    out.append(sibling.copy());
+                    continue;
+                }
                 out.append(sibling.copy().setStyle(sibling.getStyle().withColor(color)));
             }
             return out;

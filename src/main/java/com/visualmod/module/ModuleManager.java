@@ -147,6 +147,7 @@ public class ModuleManager {
         modules.add(new GuiStyle());
         modules.add(new com.visualmod.module.modules.util.SafeMode());
         modules.add(new com.visualmod.module.modules.util.ColumnSettings());
+        modules.add(new InventoryCheckModule());
         modules.add(new CustomCrossbow());
         modules.add(new ChatRules());
         modules.add(new Language());
@@ -172,7 +173,6 @@ public class ModuleManager {
         modules.add(new FaithfulTextures());
         modules.add(new DeathWaypoint());
         modules.add(new ServerProfiles());
-        modules.add(new SlotsSwitch());
 
         applyLicenseTier();
     }

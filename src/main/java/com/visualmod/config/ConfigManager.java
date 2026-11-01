@@ -358,6 +358,22 @@ public class ConfigManager {
         return names;
     }
 
+    /** Имя для «NEW CONFIG»: config, config-2, ... — первое свободное. */
+    public static String freshConfigName() {
+        for (int i = 1; i < 1000; i++) {
+            String n = i == 1 ? "config" : "config-" + i;
+            if (!new File(CONFIG_DIR, n + ".json").exists()) return n;
+        }
+        return "config-" + System.currentTimeMillis();
+    }
+
+    /** Текущий конфиг не удаляем: иначе настройки остаются только в памяти и теряются при выходе. */
+    public static boolean deleteConfig(String name) {
+        String n = normalizeName(name);
+        if (n.equals(currentConfigName)) return false;
+        return new File(CONFIG_DIR, n + ".json").delete();
+    }
+
     public static void autoSave() {
         saveConfig(currentConfigName);
     }

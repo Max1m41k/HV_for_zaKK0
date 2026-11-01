@@ -39,7 +39,7 @@ public class HudPosition {
     private static boolean loaded = false;
 
     public static final float MIN_SCALE = 0.4f;
-    public static final float MAX_SCALE = 2.5f;
+    public static final float MAX_SCALE = 5f;
 
     public static void load() {
         pos = new HashMap<>(DEFAULT);

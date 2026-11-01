@@ -103,7 +103,7 @@ public class MiniMap extends Module implements Configurable {
         float yaw = mc.player.getYaw(), rad = (float) Math.toRadians(yaw);
         int ax = cx + (int) (Math.sin(rad) * 8 * renderScale), az = cy - (int) (Math.cos(rad) * 8 * renderScale);
         ctx.fill(cx - 3, cy - 3, cx + 3, cy + 3, 0xFFFFFFFF);
-        ctx.fill(ax, az, ax + 2, az + 2, 0xFFFF8800);
+        ctx.fill(ax, az, ax + 2, az + 2, HudStyle.ACCENT);
 
         BlockPos bp = mc.player.getBlockPos();
         ctx.drawCenteredTextWithShadow(mc.textRenderer, bp.getX() + ", " + bp.getY() + ", " + bp.getZ(),

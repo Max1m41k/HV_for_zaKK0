@@ -94,6 +94,14 @@ public final class BrowserMedia {
         return control("toggle");
     }
 
+    public static boolean next() {
+        return control("next");
+    }
+
+    public static boolean prev() {
+        return control("prev");
+    }
+
     private static synchronized boolean control(String action) {
         if (!supported()) return false;
         try {

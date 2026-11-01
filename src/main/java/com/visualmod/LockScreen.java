@@ -36,9 +36,12 @@ public class LockScreen extends Screen {
 
     private static boolean sessionUnlocked = false;
 
-    public static boolean shouldLock() {
-        if (sessionUnlocked) return false;
+    /** Действующий ключ ровно на этот HWID — не зависит от того, под каким аккаунтом играем. */
+    private static Boolean hwidOk;
 
+    public static boolean hwidLicensed() {
+        if (hwidOk != null) return hwidOk;
+        boolean ok = false;
         if (UNLOCK_FILE.exists()) {
             try (BufferedReader reader = new BufferedReader(new FileReader(UNLOCK_FILE))) {
                 String line = reader.readLine();
@@ -47,16 +50,22 @@ public class LockScreen extends Screen {
                     if (parts.length == 2 || parts.length == 3) {
                         long expireTime = Long.parseLong(parts[0]);
                         String savedHWID = parts[1];
-                        String currentHWID = HWIDManager.getHWID();
-
-                        if (currentHWID.equals(savedHWID) && (expireTime == -1 || expireTime > System.currentTimeMillis())) {
-                            sessionUnlocked = true;
-                            return false;
-                        }
+                        ok = HWIDManager.getHWID().equals(savedHWID)
+                                && (expireTime == -1 || expireTime > System.currentTimeMillis());
                     }
                 }
             } catch (Exception ignored) {
             }
+        }
+        hwidOk = ok;
+        return ok;
+    }
+
+    public static boolean shouldLock() {
+        if (sessionUnlocked) return false;
+        if (hwidLicensed()) {
+            sessionUnlocked = true;
+            return false;
         }
         return true;
     }
@@ -74,7 +83,9 @@ public class LockScreen extends Screen {
     }
 
     public static void dropLicense() {
-        UNLOCK_FILE.delete(); }
+        UNLOCK_FILE.delete();
+        hwidOk = false;
+    }
 
     private String pendingKey = "";
 
@@ -261,6 +272,7 @@ public class LockScreen extends Screen {
             }
         } catch (Exception ignored) {}
 
+        hwidOk = null;
         sessionUnlocked = true;
         applyTier();
         MinecraftClient.getInstance().setScreen(new TitleScreen());

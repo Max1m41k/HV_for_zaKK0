@@ -15,6 +15,7 @@ import com.visualmod.module.settings.ToggleSetting;
 import com.visualmod.util.BindRegistry;
 import com.visualmod.util.BrowserMedia;
 import com.visualmod.module.modules.hud.MusicOverlay;
+import com.visualmod.util.HudIcons;
 import com.visualmod.util.HudStyle;
 import com.visualmod.util.KeyNames;
 import com.visualmod.util.MusicManager;
@@ -102,13 +103,30 @@ public class ClickGUI extends Screen {
         }
     }
 
-    private static final int GUI_W      = 540;
-    private static final int GUI_H      = 320;
-    private static final int SIDEBAR_W  = 44;
-    private static final int TAB_H      = 32;
-    private static final int MODULE_H   = 32;
-    private static final int MODULE_W   = 220;
-    private static final int COLS       = 2;
+    /** Геометрия классического вида (стиль Phaze): шапка, левая колонка конфигов, сетка карточек. */
+    private static final int HEADER_H  = 38;
+    private static final int SIDE_W    = 150;
+    private static final int CFG_ROW_H = 22;
+    private static final int CARD_H    = 82;
+    private static final int CARD_GAP  = 10;
+    private static final int CAT_CHIP_H  = 18;
+    private static final int SEARCH_W  = 132;
+    private static final int STRIP_H   = 15;
+
+    private static final int PAGE_MODS = 0, PAGE_SETTINGS = 1, PAGE_CONFIGS = 2;
+    private static final String[] PAGE_NAMES = {"MODS", "SETTINGS", "CONFIGS"};
+    /** Модули, чьи настройки собраны на странице SETTINGS: всё, что касается вида интерфейса. */
+    private static final String[] SETTINGS_MODULES = {
+            "GuiStyle", "GUIAnimations", "ColumnSettings", "InterfaceHUD", "MusicOverlay", "CustomCursor", "Language"
+    };
+
+    private static final int C_BLUE      = 0xFF5C7CFF;
+    private static final int C_BLUE_SOFT = 0xFF9DB2FF;
+    private static final int C_ON        = 0xFF1FA864;
+    private static final int C_OFF       = 0xFFB02048;
+    private static final int C_CARD      = 0xB3151822;
+    private static final int C_CARD_HOV  = 0xD91D2230;
+    private static final int C_LINE      = 0x24FFFFFF;
 
     private static final int MOD_ROW_H   = 26;
     private static final int COL_HEADER  = 28;
@@ -117,13 +135,21 @@ public class ClickGUI extends Screen {
     /** Категории + последняя колонка с конфигами. */
     private int columnCount() { return CATS.length + 1; }
 
-    private Module.Category selectedCat = Module.Category.RENDER;
+    /** null — вкладка «ALL»: показывать модули всех категорий. */
+    private Module.Category selectedCat = null;
+    private int page = PAGE_MODS;
     private int scrollOffset = 0;
     private int configsScroll = 0;
+    private int settingsScroll = 0;
+    /** Полная высота страницы настроек: известна только после прошлой отрисовки. */
+    private int settingsContentH = 0;
+    /** Конфиг, помеченный к удалению первым кликом по «×»: второй клик в течение 3 с удаляет файл. */
+    private String pendingDelete;
+    private long pendingDeleteAt;
     /** Список конфигов читается с диска при открытии GUI, а не каждый кадр. */
     private List<String> configsCache = List.of();
     private final Map<Module.Category, Integer> columnScrollOffsets = new HashMap<>();
-    private int guiX, guiY;
+    private int guiX, guiY, guiW, guiH;
     private String tipText;
     private String tipTitle = "";
     private int tipX, tipY;
@@ -145,15 +171,20 @@ public class ClickGUI extends Screen {
 
     public ClickGUI() { super(Text.literal("HolyVisuals")); }
 
+    /** Панель классического вида подгоняется под экран: на маленьких окнах она не должна вылезать за края. */
+    private void layout() {
+        guiW = Math.min(width - 16, Math.max(420, Math.min(width - 60, 760)));
+        guiH = Math.min(height - 16, Math.max(280, Math.min(height - 44, 440)));
+        guiX = (width - guiW) / 2;
+        guiY = (height - guiH) / 2;
+    }
+
     @Override
     protected void init() {
         com.visualmod.util.GuiWave.trigger();
-        guiX = (width  - GUI_W) / 2;
-        guiY = (height - GUI_H) / 2;
-
-        int sfX = guiX + SIDEBAR_W + 10;
-        int sfY = guiY + TAB_H + 6;
-        searchField = new TextFieldWidget(textRenderer, sfX, sfY, GUI_W - SIDEBAR_W - 20, 14, Text.literal(""));
+        layout();
+        searchField = new TextFieldWidget(textRenderer, guiX + SIDE_W + 12, guiY + HEADER_H + 10,
+                SEARCH_W, 14, Text.literal(""));
         searchField.setMaxLength(32);
         searchField.setPlaceholder(Text.literal("§8Поиск модуля..."));
         searchField.setChangedListener(q -> { searchQuery = q.toLowerCase().trim(); scrollOffset = 0; });
@@ -168,6 +199,9 @@ public class ClickGUI extends Screen {
         draggingSlider = null;
         configsCache = com.visualmod.config.ConfigManager.listConfigs();
         configsScroll = 0;
+        page = PAGE_MODS;
+        settingsScroll = 0;
+        pendingDelete = null;
 
         Module focus = pendingFocus;
         pendingFocus = null;
@@ -192,6 +226,7 @@ public class ClickGUI extends Screen {
 
     @Override
     public void render(DrawContext ctx, int mx, int my, float delta) {
+        layout();
         if (BlurGUI.isActive()) {
             ctx.fill(0, 0, width, height, 0xAA08080C);
         }
@@ -211,7 +246,7 @@ public class ClickGUI extends Screen {
 
         boolean animActive = anim.alpha() < 1f || anim.scale() != 1f || anim.offsetY() != 0f;
         if (animActive) {
-            int cx = guiX + GUI_W / 2, cy = guiY + GUI_H / 2;
+            int cx = guiX + guiW / 2, cy = guiY + guiH / 2;
             ctx.getMatrices().pushMatrix();
             ctx.getMatrices().translate(cx, cy + anim.offsetY());
             ctx.getMatrices().scale(anim.scale(), anim.scale());
@@ -247,56 +282,409 @@ public class ClickGUI extends Screen {
             ctx.drawTextWithShadow(textRenderer, note, (width - textRenderer.getWidth(note)) / 2, 4, 0xFFE1A85B);
         }
 
-        if (GuiStyle.style != GuiStyle.Style.COLUMN) {
-            renderMusicOverlay(ctx, mx, my);
-        }
-
         super.render(ctx, mx, my, delta);
 
         if (colorPicker != null) colorPicker.render(ctx, mx, my, textRenderer, width, height);
     }
 
+    /**
+     * Классический вид по референсу Phaze: шапка с вкладками, левая колонка конфигов
+     * и сетка карточек модулей. Все клики вешаются на settingsRegions — отдельной ветки
+     * hit-тестов в mouseClicked, как раньше, больше нет.
+     */
     private void renderStandardView(DrawContext ctx, int mx, int my) {
-        HudStyle.fillRounded(ctx, guiX, guiY, GUI_W, GUI_H, 12, panelColor());
-        if (Soap.onGui()) Soap.overlay(ctx, guiX, guiY, GUI_W, GUI_H, 12, openFade);
-        HudStyle.fillRounded(ctx, guiX, guiY, SIDEBAR_W, GUI_H, 12, 0xEE0E0E14);
-        if (Soap.onGui()) Soap.overlay(ctx, guiX, guiY, SIDEBAR_W, GUI_H, 12, openFade * 0.7f);
+        HudStyle.fillRounded(ctx, guiX - 1, guiY - 1, guiW + 2, guiH + 2, 15, withAlpha(C_BLUE, 0.5f * openFade));
+        HudStyle.fillRounded(ctx, guiX, guiY, guiW, guiH, 14, panelColor());
+        if (Soap.onGui()) Soap.overlay(ctx, guiX, guiY, guiW, guiH, 14, openFade);
 
-        ctx.fill(guiX + SIDEBAR_W, guiY, guiX + SIDEBAR_W + 1, guiY + GUI_H, 0x22FFFFFF);
-        HudStyle.fillRounded(ctx, guiX + 8, guiY + 10, 6, 6, 3, C_ACCENT);
+        renderHeader(ctx, mx, my);
+        renderSideColumn(ctx, mx, my);
+        searchField.setVisible(page == PAGE_MODS);
 
-        int iconY = guiY + 38;
-        for (int i = 0; i < CATS.length; i++) {
-            boolean sel = CATS[i] == selectedCat;
-            boolean hov = mx >= guiX && mx <= guiX + SIDEBAR_W && my >= iconY && my < iconY + 28;
-            if (sel) {
-                ctx.fill(guiX, iconY, guiX + SIDEBAR_W, iconY + 28, 0x22FF6600);
-                HudStyle.fillRounded(ctx, guiX, iconY, 3, 28, 1.5f, C_ACCENT);
-            } else if (hov) {
-                ctx.fill(guiX, iconY, guiX + SIDEBAR_W, iconY + 28, 0x11FFFFFF);
-            }
-            int ic = sel ? C_ACCENT : hov ? C_TEXT : C_TEXT_DIM;
-            ctx.drawCenteredTextWithShadow(textRenderer, new String[]{ "⚔", "🏃", "👁", "👤", "⚙", "📊", "✨" }[i], guiX + SIDEBAR_W / 2, iconY + 10, ic);
-            iconY += 32;
+        int contentX = guiX + SIDE_W + 12;
+        int contentY = guiY + HEADER_H + 12;
+        int contentW = guiW - SIDE_W - 24;
+        int contentH = guiH - HEADER_H - 24;
+
+        ctx.enableScissor(contentX, contentY, contentX + contentW, contentY + contentH);
+        switch (page) {
+            case PAGE_SETTINGS -> renderSettingsPage(ctx, contentX, contentY, contentW, contentH, mx, my);
+            case PAGE_CONFIGS -> renderConfigsPage(ctx, contentX, contentY, contentW, contentH, mx, my);
+            default -> renderModsPage(ctx, contentX, contentY, contentW, contentH, mx, my);
+        }
+        ctx.disableScissor();
+    }
+
+    private void renderHeader(DrawContext ctx, int mx, int my) {
+        int lx = guiX + 12, ly = guiY + 10;
+        HudStyle.fillRounded(ctx, lx, ly, 18, 18, 6, C_BLUE);
+        HudIcons.draw(ctx, "star", lx + 4.5f, ly + 4.5f, 0xFF0B0E18);
+        String brand = "HOLY", tail = " VISUALS";
+        ctx.drawTextWithShadow(textRenderer, brand, lx + 24, ly + 5, C_TEXT);
+        ctx.drawTextWithShadow(textRenderer, tail, lx + 24 + textRenderer.getWidth(brand), ly + 5, C_TEXT_DIM);
+
+        int tabY = guiY + 9, tabH = 20, gap = 8;
+        int total = 0;
+        for (String p : PAGE_NAMES) total += textRenderer.getWidth(p) + 22;
+        total += gap * (PAGE_NAMES.length - 1);
+        // Вкладки центрируем над областью контента: на узком окне они не налезают на логотип.
+        int tx = guiX + SIDE_W + 12 + Math.max(0, (guiW - SIDE_W - 24 - total) / 2);
+        for (int i = 0; i < PAGE_NAMES.length; i++) {
+            String label = PAGE_NAMES[i];
+            int tw = textRenderer.getWidth(label) + 22;
+            boolean sel = page == i;
+            boolean hov = mx >= tx && mx <= tx + tw && my >= tabY && my <= tabY + tabH;
+            HudStyle.fillRounded(ctx, tx, tabY, tw, tabH, 6, sel ? 0xE6F2F4FF : hov ? 0x26FFFFFF : 0x14FFFFFF);
+            ctx.drawCenteredTextWithShadow(textRenderer, label, tx + tw / 2, tabY + 6,
+                    sel ? 0xFF12141C : hov ? C_TEXT : C_TEXT_DIM);
+            final int p = i;
+            settingsRegions.add(new ClickRegion(tx, tabY, tx + tw, tabY + tabH, (cmx, cmy) -> {
+                page = p;
+                scrollOffset = settingsScroll = configsScroll = 0;
+            }));
+            tx += tw + gap;
+        }
+        ctx.fill(guiX + 10, guiY + HEADER_H, guiX + guiW - 10, guiY + HEADER_H + 1, C_LINE);
+    }
+
+    /** Левая колонка: быстрые конфиги, виджет плеера и кнопки NEW CONFIG / EDIT HUD LAYOUT. */
+    private void renderSideColumn(DrawContext ctx, int mx, int my) {
+        int x = guiX + 10, w = SIDE_W - 10;
+        int bottom = guiY + guiH - 10;
+        int editY = bottom - 18, newY = editY - 4 - 18;
+        int musicY = newY - 6 - 30;
+        int listTop = guiY + HEADER_H + 26;
+        int listBottom = musicY - 6;
+
+        ctx.drawTextWithShadow(textRenderer, "CONFIGS", x + 2, guiY + HEADER_H + 12, C_TEXT_DIM);
+
+        int rowH = CFG_ROW_H - 2;
+        int contentH = configsCache.size() * CFG_ROW_H;
+        configsScroll = Math.max(Math.min(0, listBottom - listTop - contentH), Math.min(0, configsScroll));
+        int curY = listTop + configsScroll;
+        for (String name : configsCache) {
+            if (curY + rowH > listTop && curY < listBottom) drawConfigRow(ctx, name, x, curY, w, rowH, mx, my);
+            curY += CFG_ROW_H;
+        }
+        ctx.fill(x, listBottom + 2, x + w, listBottom + 3, C_LINE);
+
+        renderMusicWidget(ctx, x, musicY, w, mx, my);
+        drawSideButton(ctx, "NEW CONFIG", x, newY, w, 18, false, mx, my, (a, b) -> createConfig());
+        drawSideButton(ctx, "EDIT HUD LAYOUT", x, editY, w, 18, true, mx, my, (a, b) -> editHudLayout());
+    }
+
+    private void drawConfigRow(DrawContext ctx, String name, int x, int y, int w, int h, int mx, int my) {
+        boolean current = name.equals(com.visualmod.config.ConfigManager.currentConfigName);
+        boolean hov = mx >= x && mx <= x + w && my >= y && my < y + h;
+        HudStyle.fillRounded(ctx, x, y, w, h, 6,
+                current ? withAlpha(C_BLUE, 0.28f) : hov ? 0xCC222836 : 0xAA1A1E28);
+        if (current) HudStyle.fillRounded(ctx, x, y, 3, h, 1.5f, C_BLUE);
+        boolean armed = name.equals(pendingDelete) && System.currentTimeMillis() < pendingDeleteAt;
+        ctx.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(name, w - 22), x + 8, y + 6,
+                armed ? 0xFFFF8080 : current ? C_TEXT : hov ? C_TEXT : C_TEXT_DIM);
+        settingsRegions.add(new ClickRegion(x, y, x + w - 16, y + h, (cmx, cmy) -> loadConfigAndRefresh(name)));
+
+        if (deletable(name) && (hov || armed)) {
+            int bx = x + w - 16;
+            boolean bxHov = mx >= bx && mx <= bx + 16 && my >= y && my < y + h;
+            HudStyle.fillRounded(ctx, bx, y + 3, 13, 13, 4, bxHov ? 0x66FF4D4D : 0x22FFFFFF);
+            drawCross(ctx, bx + 2, y + 5, bxHov ? C_TEXT : C_TEXT_DIM);
+            settingsRegions.add(new ClickRegion(bx, y, bx + 16, y + h, (cmx, cmy) -> requestDelete(name)));
+        }
+    }
+
+    /** Текущий конфиг и default не удаляем — иначе можно остаться вообще без настроек. */
+    private static boolean deletable(String name) {
+        return !name.equals(com.visualmod.config.ConfigManager.currentConfigName) && !name.equals("default");
+    }
+
+    /** Крестик «×» из заливок: глиф в дефолтном шрифте передаётся нестабильно. */
+    private static void drawCross(DrawContext ctx, int x, int y, int c) {
+        for (int i = 0; i < 5; i++) {
+            ctx.fill(x + i, y + i, x + i + 1, y + i + 1, c);
+            ctx.fill(x + 4 - i, y + i, x + 5 - i, y + i + 1, c);
+        }
+    }
+
+    private void drawSideButton(DrawContext ctx, String label, int x, int y, int w, int h, boolean accent,
+                                int mx, int my, RegionAction action) {
+        boolean hov = mx >= x && mx <= x + w && my >= y && my < y + h;
+        int bg = accent ? (hov ? 0xFF7590FF : C_BLUE) : (hov ? 0xCC262C3C : 0xAA1E222E);
+        HudStyle.fillRounded(ctx, x, y, w, h, 6, withAlpha(bg, openFade));
+        ctx.drawCenteredTextWithShadow(textRenderer, label, x + w / 2, y + (h - 9) / 2,
+                accent ? 0xFF0B0E18 : hov ? C_TEXT : C_TEXT_DIM);
+        settingsRegions.add(new ClickRegion(x, y, x + w, y + h, action));
+    }
+
+    private void renderMusicWidget(DrawContext ctx, int x, int y, int w, int mx, int my) {
+        HudStyle.fillRounded(ctx, x, y, w, 30, 7, 0xAA12161F);
+        HudIcons.draw(ctx, "note", x + 5, y + 4, C_BLUE_SOFT);
+        String[] info = musicWidgetInfo();
+        ctx.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(info[0], w - 22), x + 17, y + 4, C_TEXT);
+        int chipY = y + 16, chipH = 11;
+        BrowserMedia.Track bt = MusicOverlay.source != 0 ? BrowserMedia.track() : null;
+        boolean playing = MusicOverlay.source != 0 ? bt != null && bt.playing : MusicManager.isPlaying;
+        boolean hov = mx >= x + 4 && mx <= x + w - 4 && my >= chipY && my <= chipY + chipH;
+        HudStyle.fillRounded(ctx, x + 4, chipY, w - 8, chipH, 5,
+                playing ? withAlpha(C_BLUE, 0.9f) : hov ? 0xFF2A3040 : 0xFF20242E);
+        ctx.drawCenteredTextWithShadow(textRenderer, playing ? "пауза" : "играть", x + w / 2, chipY + 1,
+                playing ? 0xFF0B0E18 : C_TEXT_DIM);
+        settingsRegions.add(new ClickRegion(x + 4, chipY, x + w - 4, chipY + chipH, (cmx, cmy) -> toggleMusic()));
+    }
+
+    private void toggleMusic() {
+        if (MusicOverlay.source != 0) BrowserMedia.togglePlayPause();
+        else if (MusicManager.isPlaying) MusicManager.stop();
+        else MusicManager.play();
+    }
+
+    private void createConfig() {
+        com.visualmod.config.ConfigManager.saveConfig(com.visualmod.config.ConfigManager.freshConfigName());
+        configsCache = com.visualmod.config.ConfigManager.listConfigs();
+        configsScroll = 0;
+    }
+
+    private void loadConfigAndRefresh(String name) {
+        com.visualmod.config.ConfigManager.loadConfig(name);
+        configsCache = com.visualmod.config.ConfigManager.listConfigs();
+    }
+
+    /** «×» работает в два клика: первый помечает конфиг, второй в течение 3 с удаляет файл. */
+    private void requestDelete(String name) {
+        if (name.equals(pendingDelete) && System.currentTimeMillis() < pendingDeleteAt) {
+            com.visualmod.config.ConfigManager.deleteConfig(name);
+            configsCache = com.visualmod.config.ConfigManager.listConfigs();
+            pendingDelete = null;
+        } else {
+            pendingDelete = name;
+            pendingDeleteAt = System.currentTimeMillis() + 3000L;
+        }
+    }
+
+    /** Планировка HUD — тот же режим, что в открытом чате: там рисуются плашки и идёт перетаскивание. */
+    private void editHudLayout() {
+        client.setScreen(new net.minecraft.client.gui.screen.ChatScreen("", false));
+    }
+
+    private void renderModsPage(DrawContext ctx, int x, int y, int w, int h, int mx, int my) {
+        int chipsBottom = renderCategoryChips(ctx, x, y, w, mx, my);
+        int gridY = chipsBottom + 8;
+        int gridH = y + h - gridY;
+        int clipBottom = y + h;
+
+        List<Module> mods = getFiltered();
+        int cols = Math.max(1, Math.min(4, (w + CARD_GAP) / (168 + CARD_GAP)));
+        int cardW = (w - (cols - 1) * CARD_GAP) / cols;
+
+        int topPad = 0;
+        if (selectedCat == null || selectedCat == Module.Category.COSMETICS) {
+            drawCosmeticsCard(ctx, x, gridY, w, mx, my);
+            topPad = 26 + CARD_GAP;
         }
 
-        int cosY = guiY + GUI_H - 36;
-        boolean cosHov = mx >= guiX && mx <= guiX + SIDEBAR_W && my >= cosY && my < cosY + 28;
-        HudStyle.fillRounded(ctx, guiX + 4, cosY + 2, SIDEBAR_W - 8, 24, 6,
-            cosHov ? 0xDD2A1A40 : 0xBB1A1030);
-        ctx.drawCenteredTextWithShadow(textRenderer, "✨",
-            guiX + SIDEBAR_W / 2, cosY + 9,
-            cosHov ? 0xFFCC88FF : 0xFF9B6FFF);
+        int rows = (mods.size() + cols - 1) / cols;
+        int contentH = topPad + Math.max(0, rows * (CARD_H + CARD_GAP) - CARD_GAP);
+        scrollOffset = Math.max(Math.min(0, gridH - contentH), Math.min(0, scrollOffset));
 
-        renderTabs(ctx, mx, my);
+        int col = 0, row = 0;
+        for (Module mod : mods) {
+            int cx = x + col * (cardW + CARD_GAP);
+            int cy = gridY + topPad + row * (CARD_H + CARD_GAP) + scrollOffset;
+            if (cy + CARD_H > gridY && cy < clipBottom) {
+                drawModuleCard(ctx, mod, cx, cy, cardW, mx, my, row * cols + col, gridY, clipBottom);
+            }
+            col++;
+            if (col >= cols) { col = 0; row++; }
+        }
+    }
 
-        int sfX = guiX + SIDEBAR_W + 10;
-        int sfY = guiY + TAB_H + 6;
-        searchField.setX(sfX);
-        searchField.setY(sfY);
-        searchField.setWidth(GUI_W - SIDEBAR_W - 20);
+    /** @return нижний край ряда чипов — по нему начинается сетка карточек. */
+    private int renderCategoryChips(DrawContext ctx, int x, int y, int w, int mx, int my) {
+        int chipsW = w - SEARCH_W - 12;
+        int cx = x, cy = y;
+        cx += drawCatChip(ctx, "ALL", cx, cy, chipsW, selectedCat == null, mx, my, null) + 6;
+        for (Module.Category cat : CATS) {
+            String label = cat.getDisplayName();
+            if (cx + textRenderer.getWidth(label) + 18 > x + chipsW) {
+                cx = x;
+                cy += CAT_CHIP_H + 5;
+            }
+            cx += drawCatChip(ctx, label, cx, cy, chipsW, selectedCat == cat, mx, my, cat) + 6;
+        }
 
-        renderModules(ctx, mx, my);
+        int sx = x + w - SEARCH_W;
+        HudStyle.fillRounded(ctx, sx, y, SEARCH_W, CAT_CHIP_H, 6, 0xAA12161F);
+        drawSearchIcon(ctx, sx + 5, y + 4);
+        searchField.setX(sx + 17);
+        searchField.setY(y + 4);
+        searchField.setWidth(SEARCH_W - 22);
+        searchField.setVisible(true);
+        return cy + CAT_CHIP_H;
+    }
+
+    /** @return ширина чипа — по ней идёт раскладка следующего. */
+    private int drawCatChip(DrawContext ctx, String label, int x, int y, int maxW, boolean sel,
+                            int mx, int my, Module.Category cat) {
+        int cw = Math.min(maxW, textRenderer.getWidth(label) + 18);
+        boolean hov = mx >= x && mx <= x + cw && my >= y && my < y + CAT_CHIP_H;
+        HudStyle.fillRounded(ctx, x, y, cw, CAT_CHIP_H, 6, sel ? C_BLUE : hov ? 0xCC262C3C : 0xAA1E222E);
+        ctx.drawCenteredTextWithShadow(textRenderer, label, x + cw / 2, y + 5,
+                sel ? 0xFF0B0E18 : hov ? C_TEXT : C_TEXT_DIM);
+        settingsRegions.add(new ClickRegion(x, y, x + cw, y + CAT_CHIP_H, (cmx, cmy) -> {
+            selectedCat = cat;
+            scrollOffset = 0;
+        }));
+        return cw;
+    }
+
+    private static void drawSearchIcon(DrawContext ctx, int x, int y) {
+        HudStyle.ring(ctx, x + 3.5f, y + 3.5f, 2.2f, 3f, 0f, 360f, C_TEXT_DIM);
+        ctx.fill(x + 6, y + 6, x + 7, y + 7, C_TEXT_DIM);
+        ctx.fill(x + 7, y + 7, x + 8, y + 8, C_TEXT_DIM);
+    }
+
+    private void drawCosmeticsCard(DrawContext ctx, int x, int y, int w, int mx, int my) {
+        boolean hov = mx >= x && mx <= x + w && my >= y && my < y + 26;
+        HudStyle.fillRounded(ctx, x, y, w, 26, 8, hov ? 0xD92A2140 : 0xB3191526);
+        HudStyle.fillRounded(ctx, x + 6, y + 6, 14, 14, 5, 0xFF9B6FFF);
+        HudIcons.draw(ctx, "star", x + 8.5f, y + 8.5f, 0xFF12141C);
+        ctx.drawTextWithShadow(textRenderer, "Косметика", x + 26, y + 9, hov ? C_TEXT : 0xFFCC88FF);
+        ctx.drawTextWithShadow(textRenderer, "плащ, шапка, крылья, оружие", x + 96, y + 9, C_TEXT_DIM);
+        settingsRegions.add(new ClickRegion(x, y, x + w, y + 26,
+                (cmx, cmy) -> client.setScreen(new CosmeticsScreen())));
+    }
+
+    private void drawModuleCard(DrawContext ctx, Module mod, int x, int y, int w, int mx, int my,
+                                int index, int clipTop, int clipBottom) {
+        float a = GUIAnimations.staggerAlpha(index);
+        boolean on = mod.isEnabled();
+        boolean hov = mx >= x && mx <= x + w && my >= y && my < y + CARD_H;
+        int accent = on ? accentOf(mod) : 0xFF3A4152;
+
+        HudStyle.fillRounded(ctx, x - 1, y - 1, w + 2, CARD_H + 2, 11, withAlpha(accent, (hov ? 1f : 0.7f) * a));
+        HudStyle.fillRounded(ctx, x, y, w, CARD_H, 10, withAlpha(hov ? C_CARD_HOV : C_CARD, a));
+        drawFocusGlow(ctx, mod, x, y, w, CARD_H, 10);
+
+        drawCardIcon(ctx, mod, x + w / 2f, y + 20f, on ? C_TEXT : C_TEXT_DIM);
+        ctx.drawCenteredTextWithShadow(textRenderer, textRenderer.trimToWidth(mod.getDisplayName(), w - 12),
+                x + w / 2, y + 34, withAlpha(on ? C_TEXT : C_TEXT_DIM, a));
+
+        ctx.fill(x + 1, y + 47, x + w - 1, y + 48, withAlpha(C_LINE, a));
+        if (com.visualmod.util.ConfigMark.configurable(mod)) {
+            int gx = x + w - 25;
+            boolean gearHov = mx >= gx && mx <= gx + 21 && my >= y + 49 && my < y + 64;
+            ctx.drawTextWithShadow(textRenderer, "OPTIONS", x + 8, y + 52, withAlpha(on ? C_BLUE_SOFT : C_TEXT_DIM, a));
+            ctx.fill(gx - 5, y + 49, gx - 4, y + 64, withAlpha(C_LINE, a));
+            HudStyle.fillRounded(ctx, gx, y + 49, 21, 15, 5, withAlpha(gearHov ? 0x3DFFFFFF : 0x14FFFFFF, a));
+            HudIcons.draw(ctx, "gear", gx + 6f, y + 52, withAlpha(C_TEXT, a));
+            settingsRegions.add(new ClickRegion(gx, y + 49, gx + 21, y + 64,
+                    (cmx, cmy) -> settingsModule = settingsModule == mod ? null : mod));
+        } else {
+            ctx.drawTextWithShadow(textRenderer, "БЕЗ НАСТРОЕК", x + 8, y + 52, withAlpha(C_TEXT_DIM, a));
+        }
+
+        int stripY = y + CARD_H - STRIP_H - 3;
+        HudStyle.fillRounded(ctx, x + 3, stripY, w - 6, STRIP_H, 6, withAlpha(on ? C_ON : C_OFF, a));
+        ctx.drawCenteredTextWithShadow(textRenderer, on ? "ENABLED" : "DISABLED", x + w / 2, stripY + 4,
+                withAlpha(0xFFFFFFFF, a));
+
+        if (hov && settingsModule != mod) updateTooltip(mod, mx, my);
+        addRegion(x, y, w, CARD_H, clipTop, clipBottom, (cmx, cmy) -> {
+            if (pointerButton == 0) mod.toggle();
+            else if (pointerButton == 1) settingsModule = settingsModule == mod ? null : mod;
+        });
+    }
+
+    /** Иконка карточки: глиф HudIcons в 2.1×, а для модулей без глифа — первая буква названия. */
+    private void drawCardIcon(DrawContext ctx, Module mod, float cx, float cy, int color) {
+        ctx.getMatrices().pushMatrix();
+        ctx.getMatrices().translate(cx, cy);
+        ctx.getMatrices().scale(2.1f, 2.1f);
+        ctx.getMatrices().translate(-cx, -cy);
+        String id = HudIcons.forModule(mod.getName());
+        if (id != null) {
+            HudIcons.draw(ctx, id, cx - HudIcons.SIZE / 2f, cy - HudIcons.SIZE / 2f, color);
+        } else {
+            String name = mod.getDisplayName();
+            String letter = name.isEmpty() ? "?" : name.substring(0, 1).toUpperCase(java.util.Locale.ROOT);
+            ctx.drawCenteredTextWithShadow(textRenderer, letter, (int) cx, (int) (cy - 4), color);
+        }
+        ctx.getMatrices().popMatrix();
+    }
+
+    /** Страница SETTINGS: настройки интерфейса собраны с нескольких модулей в один список. */
+    private void renderSettingsPage(DrawContext ctx, int x, int y, int w, int h, int mx, int my) {
+        int bottom = y + h;
+        int curY = y + settingsScroll;
+        for (String name : SETTINGS_MODULES) {
+            Module m = VisualsMod.moduleManager.getModuleByName(name);
+            if (!(m instanceof Configurable cfg) || cfg.getSettings().isEmpty()) continue;
+            if (curY + 16 > y && curY < bottom) {
+                HudStyle.fillRounded(ctx, x, curY, w, 16, 6, 0xAA1E222E);
+                drawCardIcon(ctx, m, x + 12, curY + 8, C_BLUE_SOFT);
+                ctx.drawTextWithShadow(textRenderer, m.getDisplayName(), x + 24, curY + 4, C_TEXT);
+                drawModuleToggleMini(ctx, x + w - 38, curY + 3, m, y, bottom);
+            }
+            curY += 20;
+            for (Setting s : cfg.getSettings()) {
+                int rowBottom = renderSettingRow(ctx, x + 6, curY, w - 12, s, mx, my, y, bottom);
+                if (rowBottom == curY) continue;
+                curY = rowBottom + 5;
+            }
+            curY += 6;
+        }
+        settingsContentH = curY - y - settingsScroll;
+        settingsScroll = Math.max(Math.min(0, h - settingsContentH), Math.min(0, settingsScroll));
+    }
+
+    /** @return нижний край ряда, или переданный y, если для этого типа настройки ряда нет. */
+    private int renderSettingRow(DrawContext ctx, int x, int y, int w, Setting s, int mx, int my,
+                                 int clipTop, int clipBottom) {
+        if (s instanceof ModeSetting mode) return renderModeChips(ctx, x, y, w, mode, mx, my, clipTop, clipBottom);
+        if (s instanceof SliderSetting slider) return renderSlider(ctx, x, y, w, slider, clipTop, clipBottom) + 3;
+        if (s instanceof ToggleSetting tg) return renderToggleRow(ctx, x, y, w, tg, clipTop, clipBottom);
+        if (s instanceof ColorSetting color) return renderColorRow(ctx, x, y, w, color, clipTop, clipBottom);
+        if (s instanceof KeySetting ks) return renderKeyRow(ctx, x, y, w, ks, clipTop, clipBottom);
+        return y;
+    }
+
+    private void drawModuleToggleMini(DrawContext ctx, int x, int y, Module m, int clipTop, int clipBottom) {
+        boolean on = m.isEnabled();
+        String label = on ? "вкл" : "выкл";
+        HudStyle.fillRounded(ctx, x, y, 34, 10, 5, on ? C_ON : 0xFF3A4152);
+        ctx.drawCenteredTextWithShadow(textRenderer, label, x + 17, y + 1, 0xFFFFFFFF);
+        addRegion(x, y, 34, 10, clipTop, clipBottom, (cmx, cmy) -> m.toggle());
+    }
+
+    /** Страница CONFIGS: тот же список, что и в левой колонке, но крупнее и с подписями. */
+    private void renderConfigsPage(DrawContext ctx, int x, int y, int w, int h, int mx, int my) {
+        int rowH = 30, gap = 5;
+        int contentH = configsCache.size() * (rowH + gap);
+        configsScroll = Math.max(Math.min(0, h - contentH), Math.min(0, configsScroll));
+        int curY = y + configsScroll;
+        for (String name : configsCache) {
+            if (curY + rowH > y && curY < y + h) {
+                boolean current = name.equals(com.visualmod.config.ConfigManager.currentConfigName);
+                boolean hov = mx >= x && mx <= x + w && my >= curY && my < curY + rowH;
+                HudStyle.fillRounded(ctx, x, curY, w, rowH, 8,
+                        current ? withAlpha(C_BLUE, 0.24f) : hov ? 0xCC222836 : 0xAA1A1E28);
+                if (current) HudStyle.fillRounded(ctx, x, curY, 3, rowH, 1.5f, C_BLUE);
+                ctx.drawTextWithShadow(textRenderer, name, x + 12, curY + 5, current ? C_TEXT : C_TEXT_DIM);
+                ctx.drawTextWithShadow(textRenderer, current ? "загружен" : "клик — загрузить",
+                        x + 12, curY + 17, current ? C_BLUE_SOFT : 0xFF6E7691);
+                settingsRegions.add(new ClickRegion(x, curY, x + w - 26, curY + rowH,
+                        (cmx, cmy) -> loadConfigAndRefresh(name)));
+                if (deletable(name)) {
+                    int bx = x + w - 24;
+                    boolean bxHov = mx >= bx && mx <= bx + 20 && my >= curY && my < curY + rowH;
+                    HudStyle.fillRounded(ctx, bx, curY + 5, 20, 20, 6, bxHov ? 0x66FF4D4D : 0x22FFFFFF);
+                    drawCross(ctx, bx + 6, curY + 10, bxHov ? C_TEXT : C_TEXT_DIM);
+                    settingsRegions.add(new ClickRegion(bx, curY, bx + 24, curY + rowH,
+                            (cmx, cmy) -> requestDelete(name)));
+                }
+            }
+            curY += rowH + gap;
+        }
     }
 
     private record Columns(int screenW, int colW, int gap, int startY, int colH, int colsPerRow, int rowStep, int count) {
@@ -610,7 +998,7 @@ public class ClickGUI extends Screen {
                         x + 5, curY + 6, C_TEXT_DIM);
                 int chipW = Math.min(46, w - 12);
                 if (curY + 17 > top && curY < bottom) {
-                    drawToggleButton(ctx, x + w - chipW - 5, curY + 3, chipW, tg);
+                    drawToggleButton(ctx, x + w - chipW - 5, curY + 3, chipW, tg, top, bottom);
                 }
                 curY += 22;
             } else if (s instanceof SliderSetting slider) {
@@ -691,86 +1079,6 @@ public class ClickGUI extends Screen {
         return barY + 9;
     }
 
-    private void renderTabs(DrawContext ctx, int mx, int my) {
-        String[] tabNames = getTabNames();
-        int tabX = guiX + SIDEBAR_W + 60;
-        int tabY = guiY + 8;
-
-        for (String tab : tabNames) {
-            boolean sel = tab.equals(selectedCat.getDisplayName());
-            int tw = textRenderer.getWidth(tab) + 16;
-            if (sel) {
-                HudStyle.fillRounded(ctx, tabX, tabY, tw, 18, 5, 0xDD1E1E28);
-                ctx.fill(tabX + 2, tabY + 16, tabX + tw - 2, tabY + 18, C_ACCENT);
-            }
-            ctx.drawCenteredTextWithShadow(textRenderer, tab, tabX + tw / 2, tabY + 5, sel ? 0xFFFFFFFF : C_TEXT_DIM);
-            tabX += tw + 4;
-        }
-        ctx.fill(guiX + SIDEBAR_W, guiY + TAB_H, guiX + GUI_W, guiY + TAB_H + 1, 0x22FFFFFF);
-    }
-
-    private String[] getTabNames() {
-        List<String> tabs = new ArrayList<>();
-        for (Module.Category c : CATS) tabs.add(c.getDisplayName());
-        return tabs.toArray(new String[0]);
-    }
-
-    private void renderModules(DrawContext ctx, int mx, int my) {
-        List<Module> mods = getFiltered();
-        int contentX = guiX + SIDEBAR_W + 10;
-        int contentY = guiY + TAB_H + 26;
-        int contentH = GUI_H - TAB_H - 26 - 4;
-
-        int rows = (mods.size() + COLS - 1) / COLS;
-        int gridH = Math.max(0, rows * (MODULE_H + 4) - 4)
-                + (selectedCat == Module.Category.COSMETICS ? MODULE_H + 4 : 0);
-        scrollOffset = Math.max(Math.min(0, contentH - gridH), Math.min(0, scrollOffset));
-
-        ctx.enableScissor(contentX, contentY, contentX + GUI_W - SIDEBAR_W - 10, contentY + contentH);
-
-        int topPad = 0;
-        if (selectedCat == Module.Category.COSMETICS) {
-            int cardW = COLS * MODULE_W + (COLS - 1) * 8;
-            int cy = contentY + scrollOffset;
-            boolean hov = mx >= contentX && mx <= contentX + cardW && my >= cy && my < cy + MODULE_H;
-            HudStyle.fillRounded(ctx, contentX, cy, cardW, MODULE_H, 8, hov ? 0xDD3A2A58 : 0xDD2A1A44);
-            HudStyle.fillRounded(ctx, contentX, cy, 3, MODULE_H, 1.5f, 0xFF9B6FFF);
-            ctx.drawTextWithShadow(textRenderer, "✨ Косметика", contentX + 14, cy + 5, 0xFFEEAAFF);
-            ctx.drawTextWithShadow(textRenderer, "§7Меню косметики: плащ, шапка, броня и остальное",
-                    contentX + 14, cy + 18, 0xFF9A9AAE);
-            ctx.drawTextWithShadow(textRenderer, "→", contentX + cardW - 18, cy + 12, hov ? 0xFFFFFFFF : 0xFF9B6FFF);
-            topPad = MODULE_H + 4;
-        }
-
-        int col = 0, row = 0;
-        for (Module mod : mods) {
-            int mx2 = contentX + col * (MODULE_W + 8);
-            int my2 = contentY + topPad + row * (MODULE_H + 4) + scrollOffset;
-            float a = GUIAnimations.staggerAlpha(row * COLS + col);
-            boolean hov = mx >= mx2 && mx <= mx2 + MODULE_W && my >= my2 && my < my2 + MODULE_H;
-            HudStyle.fillRounded(ctx, mx2, my2, MODULE_W, MODULE_H, 8, withAlpha(hov ? 0xDD22222E : 0xDD181820, a));
-
-            if (mod.isEnabled()) {
-                HudStyle.fillRounded(ctx, mx2, my2, 3, MODULE_H, 1.5f, withAlpha(accentOf(mod), a));
-            }
-
-            drawFocusGlow(ctx, mod, mx2, my2, MODULE_W, MODULE_H, 8);
-
-            ctx.drawTextWithShadow(textRenderer, mod.getDisplayName(), mx2 + 14, my2 + 12,
-                    withAlpha(mod.isEnabled() ? C_TEXT : C_TEXT_DIM, a));
-            if (com.visualmod.util.ConfigMark.configurable(mod)) {
-                com.visualmod.util.ConfigMark.draw(ctx, mx2 + MODULE_W - 46, my2 + MODULE_H / 2,
-                        withAlpha(0xFFFFFFFF, a));
-            }
-            if (hov) updateTooltip(mod, mx, my);
-            renderToggle(ctx, mx2 + MODULE_W - 32, my2 + MODULE_H / 2 - 6, toggleAnim.getOrDefault(mod, 0f), a);
-
-            col++;
-            if (col >= COLS) { col = 0; row++; }
-        }
-        ctx.disableScissor();
-    }
-
     /** Пульсирующая зелёная рамка вокруг модуля, открытого через ArrayList-чип. */
     private void drawFocusGlow(DrawContext ctx, Module mod, int x, int y, int w, int h, int r) {
         if (focusModule != mod) return;
@@ -784,24 +1092,6 @@ public class ClickGUI extends Screen {
         HudStyle.fillRounded(ctx, x, y, w, h, r, inner);
         HudStyle.fillRounded(ctx, x - 1, y - 1, w + 2, h + 2, r + 1, green);
         HudStyle.fillRounded(ctx, x + 1, y + 1, w - 2, h - 2, Math.max(2, r - 1), 0x00000000);
-    }
-
-    private void renderToggle(DrawContext ctx, int x, int y, float anim, float rowAlpha) {
-        int tw = 24, th = 12;
-        int bg = withAlpha(lerpC(0xFF2A2A36, C_ACCENT, anim), rowAlpha);
-        HudStyle.fillRounded(ctx, x, y, tw, th, 6, bg);
-        int ballX = (int)(x + 2 + (tw - th - 2) * anim);
-        HudStyle.fillRounded(ctx, ballX, y + 2, th - 4, th - 4, 3, withAlpha(0xFFFFFFFF, rowAlpha));
-    }
-
-    private void renderMusicOverlay(DrawContext ctx, int mx, int my) {
-        int startY = guiY + 235, pW = SIDEBAR_W - 6, pX = guiX + 3;
-        HudStyle.fillRounded(ctx, pX, startY, pW, 80, 8, 0xEE0E0E14);
-        String[] info = musicWidgetInfo();
-        ctx.drawCenteredTextWithShadow(textRenderer, textRenderer.trimToWidth(info[0], pW - 6),
-                pX + pW / 2, startY + 30, C_TEXT);
-        ctx.drawCenteredTextWithShadow(textRenderer, info[1], pX + pW / 2, startY + 41, C_TEXT_DIM);
-        drawMusicButton(ctx, pX + (pW - 52) / 2, startY + 56, 52);
     }
 
     private String[] musicWidgetInfo() {
@@ -838,8 +1128,8 @@ public class ClickGUI extends Screen {
     }
 
     private void renderSettingsPanel(DrawContext ctx, int mx, int my, Module mod, Configurable cfg) {
-        int x = guiX + GUI_W + 10;
-        if (x + SETTINGS_PANEL_W > width - 4) x = Math.max(4, guiX + GUI_W - SETTINGS_PANEL_W - 6);
+        int x = guiX + guiW + 10;
+        if (x + SETTINGS_PANEL_W > width - 4) x = Math.max(4, guiX + guiW - SETTINGS_PANEL_W - 6);
         if (x < 4) x = 4;
         int top = guiY + 6;
         int maxH = Math.max(90, height - top - 8);
@@ -856,11 +1146,11 @@ public class ClickGUI extends Screen {
             if (s instanceof ModeSetting mode) {
                 y = renderModeChips(ctx, x, y, SETTINGS_PANEL_W - 12, mode, mx, my, NO_CLIP_TOP, NO_CLIP_BOTTOM) + 6;
             } else if (s instanceof ToggleSetting tg) {
-                y = renderToggleRow(ctx, x, y, tg) + 7;
+                y = renderToggleRow(ctx, x, y, SETTINGS_PANEL_W - 12, tg, NO_CLIP_TOP, NO_CLIP_BOTTOM) + 7;
             } else if (s instanceof SliderSetting slider) {
                 y = renderSlider(ctx, x, y, SETTINGS_PANEL_W - 12, slider, NO_CLIP_TOP, NO_CLIP_BOTTOM) + 7;
             } else if (s instanceof ColorSetting color) {
-                y = renderColorRow(ctx, x, y, color) + 7;
+                y = renderColorRow(ctx, x, y, SETTINGS_PANEL_W - 12, color, NO_CLIP_TOP, NO_CLIP_BOTTOM) + 7;
             } else if (s instanceof KeySetting ks) {
                 y = renderKeyRow(ctx, x, y, SETTINGS_PANEL_W - 12, ks, NO_CLIP_TOP, NO_CLIP_BOTTOM) + 7;
             }
@@ -916,31 +1206,28 @@ public class ClickGUI extends Screen {
         return y + 18;
     }
 
-    private int renderToggleRow(DrawContext ctx, int x, int y, ToggleSetting s) {
-        int w = SETTINGS_PANEL_W - 12;
+    private int renderToggleRow(DrawContext ctx, int x, int y, int w, ToggleSetting s, int clipTop, int clipBottom) {
         ctx.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(s.getName(), w - 52), x + 2, y + 3, C_TEXT_DIM);
-        drawToggleButton(ctx, x + w - 44, y, 44, s);
+        drawToggleButton(ctx, x + w - 44, y, 44, s, clipTop, clipBottom);
         return y + 14;
     }
 
-    private void drawToggleButton(DrawContext ctx, int x, int y, int w, ToggleSetting s) {
+    private void drawToggleButton(DrawContext ctx, int x, int y, int w, ToggleSetting s, int clipTop, int clipBottom) {
         int h = 14;
         boolean on = s.isEnabled();
         HudStyle.fillRounded(ctx, x, y, w, h, h / 2f, on ? 0xE6FF6600 : 0xFF26262F);
         ctx.drawCenteredTextWithShadow(textRenderer, s.getDisplayValue(), x + w / 2, y + 3,
                 on ? 0xFF14141C : C_TEXT_DIM);
-        settingsRegions.add(new ClickRegion(x, y, x + w, y + h, (cmx, cmy) -> s.toggle()));
+        addRegion(x, y, w, h, clipTop, clipBottom, (cmx, cmy) -> s.toggle());
     }
 
-    private int renderColorRow(DrawContext ctx, int x, int y, ColorSetting s) {
-        int w = SETTINGS_PANEL_W - 12;
-        ctx.drawTextWithShadow(textRenderer, s.getName(), x + 2, y, C_TEXT_DIM);
+    private int renderColorRow(DrawContext ctx, int x, int y, int w, ColorSetting s, int clipTop, int clipBottom) {
+        ctx.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(s.getName(), w - 8), x + 2, y, C_TEXT_DIM);
         int chipY = y + 11, chipH = 12;
         int col = s.getColor() | 0xFF000000;
         HudStyle.fillRounded(ctx, x + 2, chipY, w - 4, chipH, 5, col);
         ctx.drawTextWithShadow(textRenderer, s.getDisplayValue(), x + 6, chipY + 2, readableOn(col));
-        settingsRegions.add(new ClickRegion(x + 2, chipY, x + w - 2, chipY + chipH,
-                (cmx, cmy) -> openColorPicker(s)));
+        addRegion(x + 2, chipY, w - 4, chipH, clipTop, clipBottom, (cmx, cmy) -> openColorPicker(s));
         return chipY + chipH;
     }
 
@@ -977,56 +1264,6 @@ public class ClickGUI extends Screen {
             if (r.contains(mx, my)) { r.action().run(mx, my); return true; }
         }
 
-        if (GuiStyle.style != GuiStyle.Style.COLUMN) {
-            int cosY2 = guiY + GUI_H - 36;
-            if (btn == 0 && mx >= guiX && mx <= guiX + SIDEBAR_W && my >= cosY2 && my < cosY2 + 28) {
-                client.setScreen(new CosmeticsScreen());
-                return true;
-            }
-
-            int iconY = guiY + 38;
-            for (Module.Category c : CATS) {
-                if (mx >= guiX && mx <= guiX + SIDEBAR_W && my >= iconY && my < iconY + 28) {
-                    selectedCat = c; scrollOffset = 0; return true;
-                }
-                iconY += 32;
-            }
-
-            String[] tabNames = getTabNames();
-            int tabX = guiX + SIDEBAR_W + 60;
-            int tabY = guiY + 8;
-            for (int i = 0; i < tabNames.length; i++) {
-                int tw = textRenderer.getWidth(tabNames[i]) + 16;
-                if (mx >= tabX && mx <= tabX + tw && my >= tabY && my < tabY + 18) {
-                    selectedCat = CATS[i]; scrollOffset = 0; return true;
-                }
-                tabX += tw + 4;
-            }
-
-            List<Module> mods = getFiltered();
-            int contentX = guiX + SIDEBAR_W + 10, contentY = guiY + TAB_H + 26;
-            if (selectedCat == Module.Category.COSMETICS) {
-                int cardW = COLS * MODULE_W + (COLS - 1) * 8;
-                int cy = contentY + scrollOffset;
-                if (btn == 0 && mx >= contentX && mx <= contentX + cardW && my >= cy && my < cy + MODULE_H) {
-                    client.setScreen(new CosmeticsScreen());
-                    return true;
-                }
-            }
-            int topPad = selectedCat == Module.Category.COSMETICS ? MODULE_H + 4 : 0;
-            int col = 0, row = 0;
-            for (Module mod : mods) {
-                int mx2 = contentX + col * (MODULE_W + 8);
-                int my2 = contentY + topPad + row * (MODULE_H + 4) + scrollOffset;
-                if (mx >= mx2 && mx <= mx2 + MODULE_W && my >= my2 && my < my2 + MODULE_H) {
-                    if (btn == 0) mod.toggle();
-                    if (btn == 1) settingsModule = (settingsModule == mod) ? null : mod;
-                    return true;
-                }
-                col++; if (col >= COLS) { col = 0; row++; }
-            }
-        }
-
         return super.mouseClicked(click, doubled);
     }
 
@@ -1044,6 +1281,15 @@ public class ClickGUI extends Screen {
                 }
                 return true;
             }
+        } else if (page == PAGE_MODS && mx >= guiX && mx <= guiX + SIDE_W && my > guiY + HEADER_H) {
+            configsScroll = (int) Math.min(0, configsScroll + vA * CFG_ROW_H);
+            return true;
+        } else if (page == PAGE_SETTINGS) {
+            settingsScroll = (int) Math.min(0, settingsScroll + vA * 18);
+            return true;
+        } else if (page == PAGE_CONFIGS) {
+            configsScroll = (int) Math.min(0, configsScroll + vA * 35);
+            return true;
         }
         scrollOffset = (int) Math.min(0, scrollOffset + vA * 16);
         return super.mouseScrolled(mx, my, hA, vA);
@@ -1069,17 +1315,14 @@ public class ClickGUI extends Screen {
     }
 
     private List<Module> getFiltered() {
+        List<Module> src = selectedCat == null
+                ? VisualsMod.moduleManager.getVisibleModules()
+                : VisualsMod.moduleManager.getByCategory(selectedCat);
         List<Module> r = new ArrayList<>();
-        for (Module m : VisualsMod.moduleManager.getByCategory(selectedCat)) {
+        for (Module m : src) {
             if (com.visualmod.lang.Lang.matches(searchQuery, m.getName(), m.getDisplayName(), m.getDisplayDescription())) r.add(m);
         }
         return r;
-    }
-
-    private static int lerpC(int a, int b, float t) {
-        int aA=(a>>24)&0xFF,aR=(a>>16)&0xFF,aG=(a>>8)&0xFF,aB=a&0xFF;
-        int bA=(b>>24)&0xFF,bR=(b>>16)&0xFF,bG=(b>>8)&0xFF,bB=b&0xFF;
-        return ((int)(aA+(bA-aA)*t)<<24)|((int)(aR+(bR-aR)*t)<<16)|((int)(aG+(bG-aG)*t)<<8)|(int)(aB+(bB-aB)*t);
     }
 
     @Override public void renderBackground(DrawContext ctx, int mx, int my, float d) {}

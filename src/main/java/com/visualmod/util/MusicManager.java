@@ -9,6 +9,8 @@ public class MusicManager {
     public static List<File> playlist = new ArrayList<>();
     public static int currentIndex = -1;
     public static boolean isPlaying = false;
+    /** Кнопка «повтор» на карточке: трек по кругу вместо перехода к следующему. */
+    public static boolean repeat = false;
 
     private static SourceDataLine line;
     private static Thread audioThread;
@@ -146,6 +148,7 @@ public class MusicManager {
 
     private static void nextTrack() {
         if (playlist.isEmpty()) return;
+        if (repeat) { play(); return; }
         currentIndex = (currentIndex + 1) % playlist.size();
         play();
     }

@@ -72,7 +72,7 @@ public class BindsHUD extends Module {
         ctx.drawTextWithShadow(mc.textRenderer, "§6Binds", chipX + 8, chipY + 6, 0xFFFFAA55);
         String arrow = open ? "▲" : "▼";
         ctx.drawTextWithShadow(mc.textRenderer, arrow,
-                chipX + chipW - mc.textRenderer.getWidth(arrow) - 8, chipY + 6, 0xFFFF8800);
+                chipX + chipW - mc.textRenderer.getWidth(arrow) - 8, chipY + 6, HudStyle.ACCENT);
 
         int y = chipY + 20;
         if (preview.isEmpty()) {
@@ -126,8 +126,8 @@ public class BindsHUD extends Module {
             for (Map.Entry<Module.Category, List<Module>> e : grouped.entrySet()) {
                 int cx = panelX + pad + col * (colW + gap);
                 int cy = panelY + pad;
-                ctx.drawTextWithShadow(mc.textRenderer, "§6" + e.getKey().getDisplayName(),
-                        cx, cy, 0xFFFF8800);
+                ctx.drawTextWithShadow(mc.textRenderer, e.getKey().getDisplayName(),
+                        cx, cy, HudStyle.ACCENT);
                 cy += headerH;
                 for (Module m : e.getValue()) {
                     String key = BindRegistry.getKeyFor(m.getName());

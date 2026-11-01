@@ -9,6 +9,7 @@ import com.visualmod.module.modules.hud.HudPosition;
 import com.visualmod.module.modules.hud.HudRadius;
 import com.visualmod.module.modules.hud.HudRenderer;
 import com.visualmod.module.modules.hud.InterfaceHUD;
+import com.visualmod.module.modules.hud.MusicOverlay;
 import com.visualmod.module.modules.hud.ScoreboardEdit;
 import com.visualmod.module.modules.util.ChatPlus;
 import com.visualmod.screen.EventTableScreen;
@@ -102,11 +103,13 @@ public abstract class ChatHudEditMixin extends Screen {
         double mouseX = click.x(), mouseY = click.y();
         int button = click.button();
         if (button != 0 || VisualsMod.moduleManager == null) return;
-        // Кнопки «+» chat+ проверяем до ванильной обработки: в 1.21.11 у ChatHud своего mouseClicked
-        // нет, и это единственная точка, где клик по чату ещё можно перехватить.
-        if (!InputUtil.isKeyPressed(MinecraftClient.getInstance().getWindow(), GLFW.GLFW_KEY_LEFT_CONTROL) && ChatPlus.handleClick(mouseX, mouseY)) {
-            cir.setReturnValue(true);
-            return;
+        // Кнопки «+» chat+ и карточки плеера проверяем до ванильной обработки: в 1.21.11 у ChatHud
+        // своего mouseClicked нет, и это единственная точка, где клик по чату ещё можно перехватить.
+        if (!InputUtil.isKeyPressed(MinecraftClient.getInstance().getWindow(), GLFW.GLFW_KEY_LEFT_CONTROL)) {
+            if (ChatPlus.handleClick(mouseX, mouseY) || MusicOverlay.handleClick(mouseX, mouseY)) {
+                cir.setReturnValue(true);
+                return;
+            }
         }
         if (!InputUtil.isKeyPressed(MinecraftClient.getInstance().getWindow(), GLFW.GLFW_KEY_LEFT_CONTROL)) return;
 

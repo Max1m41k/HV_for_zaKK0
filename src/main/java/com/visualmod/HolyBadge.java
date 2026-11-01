@@ -7,7 +7,9 @@ import com.google.gson.JsonParser;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Style;
+import net.minecraft.text.StyleSpriteSource;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -26,13 +28,14 @@ public final class HolyBadge {
     private static final String BASE = com.visualmod.util.Endpoints.AUTH;
     private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(6)).build();
     private static final Set<String> USERS = ConcurrentHashMap.newKeySet();
-    private static final int ORANGE = 0xFF7B00;
     private static String hwid;
     private static boolean started = false;
 
     public static void start() {
         if (started) return;
         started = true;
+        // HWID считается через PowerShell: греем в фоне, чтобы значок не дёргал его в кадре.
+        new Thread(() -> { try { hwid(); } catch (Throwable ignored) {} }, "holy-badge-hwid").start();
         ScheduledExecutorService ex = Executors.newSingleThreadScheduledExecutor(r -> { Thread t = new Thread(r, "holy-badge"); t.setDaemon(true); return t; });
         ex.scheduleWithFixedDelay(() -> { try { fetchList(); } catch (Exception ignored) {} }, 20, 60, TimeUnit.SECONDS);
         ex.scheduleWithFixedDelay(() -> { try { ping(); } catch (Exception ignored) {} }, 30, 600, TimeUnit.SECONDS);
@@ -76,12 +79,17 @@ public final class HolyBadge {
         if (nick == null) return false;
         String low = nick.toLowerCase(Locale.ROOT);
         if (USERS.contains(low)) return true;
-        // Активированный через AltManager альт показывает треугольник сразу,
-        // не дожидаясь пока /api/presence обновит серверный список.
-        if (!com.visualmod.screen.AccountManager.isLicensed(nick)) return false;
+        if (!isOwnNick(low)) return false;
+        // Свой ник: знак привязан к HWID, а не к аккаунту — ключ на этой машине есть,
+        // значит он есть под любым ником. Ветка AccountManager — для альтов из AltManager.
+        return LockScreen.hwidLicensed() || com.visualmod.screen.AccountManager.isLicensed(nick);
+    }
+
+    private static boolean isOwnNick(String low) {
         MinecraftClient mc = MinecraftClient.getInstance();
-        return mc != null && mc.getSession() != null
-                && low.equals(mc.getSession().getUsername().toLowerCase(Locale.ROOT));
+        if (mc == null) return false;
+        if (mc.player != null && low.equals(mc.player.getName().getString().toLowerCase(Locale.ROOT))) return true;
+        return mc.getSession() != null && low.equals(mc.getSession().getUsername().toLowerCase(Locale.ROOT));
     }
 
     /** Немедленно отправляет presence-пинг — используется после переключения на licensed-альт. */
@@ -89,11 +97,22 @@ public final class HolyBadge {
         new Thread(() -> { try { ping(); } catch (Exception ignored) {} }, "holy-badge-ping").start();
     }
 
+    public static final Identifier BADGE_FONT_ID = Identifier.of("visualmod", "hw_badge");
+    private static final StyleSpriteSource.Font BADGE_FONT = new StyleSpriteSource.Font(BADGE_FONT_ID);
+    private static final String BADGE_GLYPH = "\uE000";
+
+    /** Текст со шрифтом значка — такой узел перекрашивать нельзя, иначе куб станет одноцветным. */
+    public static boolean isBadgeStyle(Style style) {
+        return style != null && style.getFont() instanceof StyleSpriteSource.Font f && BADGE_FONT_ID.equals(f.id());
+    }
+
     public static Text withBadge(Text original) { return withBadge(original, false); }
 
     public static Text withBadge(Text original, boolean friend) {
-        MutableText tri = Text.literal("\u25B2 ").setStyle(Style.EMPTY.withColor(friend ? 0x3BE06A : ORANGE));
-        return tri.append(original);
+        MutableText glyph = Text.literal(BADGE_GLYPH)
+                .setStyle(Style.EMPTY.withFont(BADGE_FONT).withColor(friend ? 0x3BE06A : 0xFFFFFF));
+        // Пробел — дефолтным шрифтом: в hw_badge есть только сам глиф.
+        return Text.empty().append(glyph).append(Text.literal(" ")).append(original);
     }
 
     private HolyBadge() {}

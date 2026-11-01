@@ -12,6 +12,7 @@ import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.input.KeyInput;
+import net.minecraft.client.option.Perspective;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
@@ -21,16 +22,14 @@ import java.util.List;
 
 public class CosmeticsScreen extends Screen {
 
-    private static final int CELL_W     = 84;
-    private static final int CELL_H     = 82;
-    private static final int CELL_GAP   = 9;
-    private static final int COLS       = 3;
+    private static final int CELL_W     = 70;
+    private static final int CELL_H     = 80;
+    private static final int CELL_GAP   = 8;
+    private static final int COLS       = 2;
     private static final int SECTION_H  = 20;
-    private static final int PANEL_W    = COLS * CELL_W + (COLS - 1) * CELL_GAP + 28;
+    private static final int PANEL_W    = COLS * CELL_W + (COLS - 1) * CELL_GAP + 24;
 
-    private static final Identifier BG   = Identifier.of("visualmod", "textures/gui/bg_hv.png");
     private static final Identifier LOGO = Identifier.of("visualmod", "textures/gui/hw_logo.png");
-    private static final int BG_PX = 1376, BG_PY = 768;
 
     private static final int PANEL      = 0xE60C0A12;
     private static final int ACCENT     = ButtonStyle.ORANGE;
@@ -41,6 +40,8 @@ public class CosmeticsScreen extends Screen {
     private int scrollY = 0;
     private int contentHeight = 0;
     private int panelX, panelY, panelH;
+    /** Вид камеры до открытия меню: возвращаем его при закрытии, а не оставляем F5. */
+    private Perspective camBefore;
 
     private record CellHit(String slot, int idx, int x, int y) {}
     private final List<CellHit> cellHits = new ArrayList<>();
@@ -58,16 +59,23 @@ public class CosmeticsScreen extends Screen {
     @Override
     protected void init() {
         panelH = height - 60;
-        panelX = (width - PANEL_W) / 2;
+        panelX = width - PANEL_W - 10;
         panelY = 30;
         cellHits.clear();
         colorPicker = null;
         chipW = -1;
+        // init() вызывается и при смене размера окна — исходный вид камеры запоминаем один раз.
+        if (camBefore == null && client != null && client.player != null) {
+            camBefore = client.options.getPerspective();
+            if (camBefore != Perspective.THIRD_PERSON_BACK) {
+                client.options.setPerspective(Perspective.THIRD_PERSON_BACK);
+            }
+        }
     }
 
     @Override
     public void render(DrawContext ctx, int mx, int my, float delta) {
-        drawWallpaper(ctx);
+        ctx.fill(0, 0, width, height, 0x7307060B);
 
         HudStyle.fillRounded(ctx, panelX + 3, panelY + 4, PANEL_W, panelH, 12, 0x66000000);
         HudStyle.fillRounded(ctx, panelX, panelY, PANEL_W, panelH, 12, PANEL);
@@ -131,16 +139,6 @@ public class CosmeticsScreen extends Screen {
 
         super.render(ctx, mx, my, delta);
         if (colorPicker != null) colorPicker.render(ctx, mx, my, textRenderer, width, height);
-    }
-
-    private void drawWallpaper(DrawContext ctx) {
-        ctx.fill(0, 0, width, height, 0xFF07060B);
-        double scale = Math.max(width / (double) BG_PX, height / (double) BG_PY);
-        int rw = Math.min(BG_PX, (int) Math.round(width / scale));
-        int rh = Math.min(BG_PY, (int) Math.round(height / scale));
-        ctx.drawTexture(RenderPipelines.GUI_TEXTURED, BG, 0, 0, (BG_PX - rw) / 2f, (BG_PY - rh) / 2f,
-                width, height, rw, rh, BG_PX, BG_PY);
-        ctx.fill(0, 0, width, height, 0xB307060B);
     }
 
     private void drawPetAIChip(DrawContext ctx, int mx, int my) {
@@ -816,6 +814,10 @@ public class CosmeticsScreen extends Screen {
     @Override
     public void removed() {
         super.removed();
+        if (camBefore != null) {
+            client.options.setPerspective(camBefore);
+            camBefore = null;
+        }
         com.visualmod.config.ConfigManager.autoSave();
     }
 }

@@ -30,6 +30,9 @@ public class HotbarHUD extends Module implements Configurable {
     private static final int FOOD_C = 0xFFE9A33C;
     private static final int TRACK = 0x4D000000;
 
+    /** Диаметр слота-кружка и шаг между ними. */
+    private static final int SLOT = 22, GAP = 2;
+
     private static final float[] ANIM = {-1f, -1f, -1f};
     private static final float[] PREV = {-1f, -1f, -1f};
     private static final float[] FLASH = {0f, 0f, 0f};
@@ -71,35 +74,41 @@ public class HotbarHUD extends Module implements Configurable {
 
     public void render(DrawContext ctx, int x, int y) {
         if (!isEnabled() || mc.player == null || spectator(mc)) return;
-        final int slotSize = 20, slots = 9;
-        int w = slots * slotSize + 8, h = slotSize + 8;
+        final int slots = 9;
+        int w = slots * SLOT + (slots - 1) * GAP + 10, h = SLOT + 10;
         if (centered) { x = (ctx.getScaledWindowWidth() - w) / 2; y = ctx.getScaledWindowHeight() - h - 2; }
 
         drawStatusBars(ctx, x, y, w);
 
-        HudStyle.drawPanel(ctx, x, y, w, h);
+        HudStyle.drawPanel(ctx, x, y, w, h, 1f, HudStyle.pill(h));
         int selected = mc.player.getInventory().getSelectedSlot();
         for (int i = 0; i < slots; i++) {
             ItemStack stack = mc.player.getInventory().getStack(i);
-            int sx = x + 4 + i * slotSize, sy = y + 4;
-            if (i == selected) ctx.fill(sx - 1, sy - 1, sx + slotSize - 1, sy + slotSize - 1, HudStyle.ACCENT);
-            ctx.fill(sx, sy, sx + slotSize - 2, sy + slotSize - 2, 0x88333333);
+            int sx = x + 5 + i * (SLOT + GAP), sy = y + 5;
+            drawSlot(ctx, sx, sy, i == selected);
             if (!stack.isEmpty()) {
-                ctx.drawItem(stack, sx + 1, sy + 1);
-                ctx.drawStackOverlay(mc.textRenderer, stack, sx + 1, sy + 1);
+                ctx.drawItem(stack, sx + (SLOT - 16) / 2, sy + (SLOT - 16) / 2);
+                ctx.drawStackOverlay(mc.textRenderer, stack, sx + (SLOT - 16) / 2, sy + (SLOT - 16) / 2);
             }
         }
-        com.visualmod.util.SlotNumbers.drawOverHotbarHud(ctx, x + 5, y + 5, slotSize);
+        com.visualmod.util.SlotNumbers.drawOverHotbarHud(ctx, x + 5 + (SLOT - 16) / 2, y + 5 + (SLOT - 16) / 2, SLOT + GAP);
         if (showOffhand) {
             ItemStack off = mc.player.getOffHandStack();
             if (!off.isEmpty()) {
-                int ow = slotSize + 8, ox = x - ow - 4;
-                HudStyle.drawPanel(ctx, ox, y, ow, h);
-                ctx.fill(ox + 4, y + 4, ox + 4 + slotSize - 2, y + 4 + slotSize - 2, 0x88333333);
-                ctx.drawItem(off, ox + 5, y + 5);
-                ctx.drawStackOverlay(mc.textRenderer, off, ox + 5, y + 5);
+                int ow = SLOT + 10, ox = x - ow - GAP;
+                HudStyle.drawPanel(ctx, ox, y, ow, h, 1f, HudStyle.pill(h));
+                drawSlot(ctx, ox + 5, y + 5, false);
+                ctx.drawItem(off, ox + 5 + (SLOT - 16) / 2, y + 5 + (SLOT - 16) / 2);
+                ctx.drawStackOverlay(mc.textRenderer, off, ox + 5 + (SLOT - 16) / 2, y + 5 + (SLOT - 16) / 2);
             }
         }
+    }
+
+    /** Слот-кружок: у выбранного — кольцо акцента, у остальных тёмная тарелка. */
+    private static void drawSlot(DrawContext ctx, int x, int y, boolean selected) {
+        float r = HudStyle.pill(SLOT);
+        if (selected) HudStyle.fillRounded(ctx, x - 1, y - 1, SLOT + 2, SLOT + 2, r + 1, HudStyle.ACCENT);
+        HudStyle.fillRounded(ctx, x, y, SLOT, SLOT, r, selected ? 0xDD20242E : 0x9912151C);
     }
 
     private void drawStatusBars(DrawContext ctx, int x, int y, int w) {
