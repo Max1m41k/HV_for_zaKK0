@@ -7,6 +7,7 @@ import com.google.gson.JsonObject;
 import com.visualmod.VisualsMod;
 import com.visualmod.module.Module;
 import com.visualmod.util.Diag;
+import com.visualmod.util.EventGPS;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -25,10 +26,14 @@ import java.util.UUID;
 /**
  * Feature Control: сервер HolyWorld сам решает, какие функции мода скрыты.
  *
- * Клиент работает fail-closed: с момента входа на внешний сервер всё, что можно скрыть,
- * скрыто и остаётся скрытым, пока не придёт корректный ответ. Ответ без id, без method,
- * без payload.blocklist или с некорректным списком корректным не считается — он только
- * порождает повторный запрос.
+ * Контроль применяется только на HolyWorld (адрес вида *.holyworld.ru / *.holyworld.me или бренд
+ * сервера «HolyWorld»): на чужом сервере с объявленным каналом модули скрывать нельзя, и мы там
+ * ничего не прячем.
+ * На HolyWorld клиент работает fail-closed: с момента входа всё, что можно скрыть, скрыто и остаётся
+ * скрытым, пока не придёт корректный ответ. Корректный ответ — `id` (совпал с нашим запросом) + `ok`
+ * + `payload.blocklist`; `method` в ответе не обязателен. Push — сообщение с `event` и списком.
+ * Сообщение без `id` и без `event`, без `payload.blocklist` или с некорректным списком корректным не
+ * считается — оно только порождает повторный запрос.
  */
 public final class LiteApi {
     private static final Identifier CHANNEL = Identifier.of("liteapi", "feature-control");
@@ -40,7 +45,11 @@ public final class LiteApi {
     private static final int MAX_PAYLOAD_BYTES = 1 << 20;
     /** Серверный лимит частоты запросов: раньше этого срока не отправляем ничего, даже после reconnect. */
     private static final long MIN_INTERVAL_MS = 11_000;
-    private static final long TIMEOUT_MS = 5_000;
+    /**
+     * Ждём ответа. HolyWorld отвечает за 8-13 секунд (замерено в логах), прежние 5 секунд объявляли
+     * каждый нормальный ответ таймаутом; поздний ответ всё равно принимается по lastQueryId.
+     */
+    private static final long TIMEOUT_MS = 12_000;
     private static final long MAX_BACKOFF_MS = 60_000;
     /** Сколько таймаутов подряд терпим, пока сервер не подтвердил, что говорит по протоколу. */
     private static final int ABSENT_ATTEMPTS = 3;
@@ -49,6 +58,12 @@ public final class LiteApi {
     private static volatile boolean onRemoteServer;
     /** id нашего неотвеченного запроса; null — запроса в полёта нет. */
     private static volatile String pendingId;
+    /**
+     * id последнего отправленного запроса: он переживает таймаут. Сервер отвечает медленнее нашего
+     * дедлайна, и без этой памяти запоздалый, но настоящий ответ отвергался — модули оставались
+     * скрытыми на всю сессию.
+     */
+    private static volatile String lastQueryId;
     private static volatile long sentAt;
     /** Не раньше этого момента отправляем следующий запрос. Переживает disconnect. */
     private static volatile long nextSendAt;
@@ -83,8 +98,17 @@ public final class LiteApi {
             onRemoteServer = false;
             return;
         }
+        // Контроль функций применяется только на HolyWorld: на чужом сервере с объявленным каналом
+        // мы не имели права скрывать модули — а до ответа сервера они были бы скрыты навсегда.
+        if (!EventGPS.onHolyWorld()) {
+            onRemoteServer = false;
+            VisualsMod.LOGGER.info("[LiteAPI] Сервер «{}» (бренд «{}») — не HolyWorld, контроль функций не применяется",
+                    EventGPS.serverAddress(), EventGPS.serverBrand());
+            return;
+        }
         onRemoteServer = true;
         pendingId = null;
+        lastQueryId = null;
         timeouts = 0;
         noControl = false;
         haveList = false;
@@ -99,6 +123,7 @@ public final class LiteApi {
         // nextSendAt не сбрасываем: быстрый reconnect не должен обходить серверный лимит.
         onRemoteServer = false;
         pendingId = null;
+        lastQueryId = null;
         timeouts = 0;
         noControl = false;
         haveList = false;
@@ -159,6 +184,7 @@ public final class LiteApi {
             request.add("payload", payload);
 
             pendingId = id;
+            lastQueryId = id;
             sentAt = System.currentTimeMillis();
             nextSendAt = sentAt + MIN_INTERVAL_MS;
             if (!haveList) hideAllUnverified();
@@ -197,47 +223,55 @@ public final class LiteApi {
         }
 
         String id = string(root, "id");
+        String event = string(root, "event");
         String method = string(root, "method");
-        if (id == null || method == null) {
-            VisualsMod.LOGGER.warn("[LiteAPI] Сообщение без id или method — игнорируем: {}", brief(json));
+        // По согласованному протоколу успешный ответ — это id + ok + payload.blocklist, поля method
+        // в нём нет, а push приходит с полем event. Проверка «нужны id И method» отбрасывала и то,
+        // и другое, поэтому список не мог примениться никогда.
+        if (id == null && event == null) {
+            VisualsMod.LOGGER.warn("[LiteAPI] Сообщение без id и без event — игнорируем: {}", brief(json));
             return;
         }
         verifiedServer = true;
         noControl = false;
 
-        if (METHOD.equals(method)) {
-            if (!id.equals(pendingId)) {
-                VisualsMod.LOGGER.info("[LiteAPI] Ответ не на наш запрос (ждали «{}», пришёл «{}») — игнорируем",
-                        pendingId, id);
-                return;
-            }
-            pendingId = null;
-            timeouts = 0;
-            List<String> blocked = readBlocklist(root);
-            if (blocked == null) {
-                VisualsMod.LOGGER.warn("[LiteAPI] Ответ без корректного payload.blocklist — ничего не применяем, "
-                        + "функции остаются скрытыми");
-                nextSendAt = System.currentTimeMillis() + MIN_INTERVAL_MS;
-                return;
-            }
-            JsonElement ok = root.get("ok");
-            if (ok == null || !ok.isJsonPrimitive() || !ok.getAsJsonPrimitive().isBoolean() || !ok.getAsBoolean()) {
-                VisualsMod.LOGGER.warn("[LiteAPI] Сервер отклонил запрос: {} — функции остаются скрытыми",
-                        string(root, "error"));
-                nextSendAt = System.currentTimeMillis() + MIN_INTERVAL_MS;
-                return;
-            }
-            haveList = true;
-            int hidden = VisualsMod.moduleManager == null
-                    ? 0 : VisualsMod.moduleManager.applyLiteBlocklist(blocked);
-            VisualsMod.LOGGER.info("[LiteAPI] Ответ принят, скрыто модулей: {} (в списке {})", hidden, blocked.size());
+        if (event != null) {
+            applyList(root, "Push-обновление «" + event + "»");
             return;
         }
+        // method отсутствует — это и есть нормальный ответ на наш запрос; но если сервер прислал
+        // неизвестный method, к нашему запросу он не относится.
+        if (method != null && !METHOD.equals(method)) {
+            VisualsMod.LOGGER.info("[LiteAPI] Неизвестный method «{}» — игнорируем: {}", method, brief(json));
+            return;
+        }
+        // Ответ мог дойти уже после таймаута, когда pendingId стёрт: сверяем и с последним запросом,
+        // иначе корректный список отвергался, и fail-closed сокрытие висело до конца сессии.
+        if (!id.equals(pendingId) && !id.equals(lastQueryId)) {
+            VisualsMod.LOGGER.info("[LiteAPI] Ответ не на наш запрос (ждали «{}», пришёл «{}») — игнорируем",
+                    pendingId != null ? pendingId : lastQueryId, id);
+            return;
+        }
+        pendingId = null;
+        lastQueryId = null;
+        timeouts = 0;
+        JsonElement ok = root.get("ok");
+        if (ok == null || !ok.isJsonPrimitive() || !ok.getAsJsonPrimitive().isBoolean() || !ok.getAsBoolean()) {
+            VisualsMod.LOGGER.warn("[LiteAPI] Сервер отклонил запрос: {} — функции остаются скрытыми",
+                    string(root, "error"));
+            nextSendAt = System.currentTimeMillis() + MIN_INTERVAL_MS;
+            return;
+        }
+        applyList(root, "Ответ");
+    }
 
+    /** `what` — чем список пришёл (ответ или push), чтобы в логе было видно, что именно применилось. */
+    private static void applyList(JsonObject root, String what) {
         List<String> blocked = readBlocklist(root);
         if (blocked == null) {
-            VisualsMod.LOGGER.info("[LiteAPI] Push-сообщение без корректного payload.blocklist — игнорируем: {}",
-                    brief(json));
+            VisualsMod.LOGGER.warn("[LiteAPI] {} без корректного payload.blocklist — ничего не применяем, "
+                    + "функции остаются скрытыми", what);
+            nextSendAt = System.currentTimeMillis() + MIN_INTERVAL_MS;
             return;
         }
         pendingId = null;
@@ -245,7 +279,7 @@ public final class LiteApi {
         haveList = true;
         int hidden = VisualsMod.moduleManager == null
                 ? 0 : VisualsMod.moduleManager.applyLiteBlocklist(blocked);
-        VisualsMod.LOGGER.info("[LiteAPI] Push-обновление «{}» принято, скрыто модулей: {}", method, hidden);
+        VisualsMod.LOGGER.info("[LiteAPI] {} принят, скрыто модулей: {} (в списке {})", what, hidden, blocked.size());
     }
 
     /** null — список непригоден (отсутствует, не массив, пустая или не-строка), применять нельзя. */

@@ -42,7 +42,6 @@ public class AutoWalk extends Module implements Configurable {
 
     private static void stop(AutoWalk m) {
         m.setEnabled(false);
-        m.onDisable();
     }
 
     private static void onStartTick(MinecraftClient mc) {

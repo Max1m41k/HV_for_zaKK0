@@ -41,9 +41,6 @@ public class ConfigManager {
 
     public static ModuleManager moduleManager;
 
-    /** true пока применяется конфиг: в это время onEnable у модулей не должен открывать редакторы. */
-    public static boolean applying = false;
-
     public static void init(ModuleManager manager) {
         moduleManager = manager;
         if (!CONFIG_DIR.exists()) {
@@ -66,7 +63,9 @@ public class ConfigManager {
 
         JsonObject modulesJson = new JsonObject();
         for (Module m : moduleManager.getModules()) {
-            modulesJson.addProperty(m.getName().toLowerCase(), m.isEnabled());
+            // Пишем намерение, а не факт: сокрытие по блок-листу выключает модуль, но настройку
+            // пользователя оно отменять не должно, иначе автосейв затирает конфиг «всем выключено».
+            modulesJson.addProperty(m.getName().toLowerCase(), m.getDesired());
         }
         configJson.add("modules", modulesJson);
 
@@ -188,28 +187,29 @@ public class ConfigManager {
             keybinds.clear();
             macros.clear();
 
-            if (configJson.has("settings") && configJson.get("settings").isJsonObject() && moduleManager != null) {
-                applySettings(configJson.getAsJsonObject("settings"));
-            }
-
             lastBetaSkipped = 0;
-            if (configJson.has("modules") && moduleManager != null) {
-                JsonObject modulesJson = configJson.getAsJsonObject("modules");
-                applying = true;
-                try {
+            // Один пакет на всю загрузку: пак-модули перезагружают ресурсы, по перезагрузке на шаг.
+            com.visualmod.util.RuntimePacks.beginBatch();
+            try {
+                if (configJson.has("settings") && configJson.get("settings").isJsonObject() && moduleManager != null) {
+                    applySettings(configJson.getAsJsonObject("settings"));
+                }
+
+                if (configJson.has("modules") && moduleManager != null) {
+                    JsonObject modulesJson = configJson.getAsJsonObject("modules");
                     for (Module m : moduleManager.getModules()) {
                         String key = m.getName().toLowerCase();
-                        if (modulesJson.has(key)) {
-                            boolean shouldEnable = modulesJson.get(key).getAsBoolean();
-                            if (m.isEnabled() != shouldEnable) {
-                                m.toggle();
-                            }
-                            if (shouldEnable && m.isHidden() && !m.isEnabled()) lastBetaSkipped++;
-                        }
+                        if (!modulesJson.has(key)) continue;
+                        boolean shouldEnable = modulesJson.get(key).getAsBoolean();
+                        // setEnabled принимает намерение и применяет его настолько, насколько модуль
+                        // разблокирован: скрытый блок-листом он останется выключенным, но намерение
+                        // сохранит и вернётся сам, когда сокрытие снимут.
+                        m.setEnabled(shouldEnable);
+                        if (shouldEnable && m.isHidden() && !m.isEnabled()) lastBetaSkipped++;
                     }
-                } finally {
-                    applying = false;
                 }
+            } finally {
+                com.visualmod.util.RuntimePacks.endBatch();
             }
 
             if (configJson.has("binds")) {

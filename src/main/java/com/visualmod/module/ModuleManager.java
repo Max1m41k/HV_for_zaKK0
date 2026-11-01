@@ -189,15 +189,20 @@ public class ModuleManager {
 
     public void applyLicenseTier() {
         boolean beta = com.visualmod.LockScreen.isBetaLicense();
-        for (String name : BETA_BLOCKED) {
-            Module m = getModuleByName(name);
-            if (m == null) continue;
-            if (beta) {
-                if (!m.isHidden()) betaHidden.add(m);
-                m.setHidden(true);
-            } else if (betaHidden.remove(m)) {
-                m.setHidden(false);
+        com.visualmod.util.RuntimePacks.beginBatch();
+        try {
+            for (String name : BETA_BLOCKED) {
+                Module m = getModuleByName(name);
+                if (m == null) continue;
+                if (beta) {
+                    if (!m.isHidden()) betaHidden.add(m);
+                    m.setHidden(true);
+                } else if (betaHidden.remove(m)) {
+                    m.setHidden(false);
+                }
             }
+        } finally {
+            com.visualmod.util.RuntimePacks.endBatch();
         }
     }
 
@@ -208,25 +213,30 @@ public class ModuleManager {
      * Пустой список — сервер ответил «ничего не запрещено».
      */
     public int applyLiteBlocklist(java.util.List<String> blocked) {
-        for (Module m : new java.util.ArrayList<>(liteHidden)) {
-            if (!betaHidden.contains(m)) m.setHidden(false);
-        }
-        liteHidden.clear();
-        if (blocked == null) {
-            for (Module m : modules) {
-                if (m.isPermanent() || m.isHidden()) continue;
+        com.visualmod.util.RuntimePacks.beginBatch();
+        try {
+            for (Module m : new java.util.ArrayList<>(liteHidden)) {
+                if (!betaHidden.contains(m)) m.setHidden(false);
+            }
+            liteHidden.clear();
+            if (blocked == null) {
+                for (Module m : modules) {
+                    if (m.isPermanent() || m.isHidden()) continue;
+                    m.setHidden(true);
+                    liteHidden.add(m);
+                }
+                return liteHidden.size();
+            }
+            for (String name : blocked) {
+                Module m = getModuleByName(name);
+                if (m == null || m.isPermanent()) continue;
                 m.setHidden(true);
                 liteHidden.add(m);
             }
             return liteHidden.size();
+        } finally {
+            com.visualmod.util.RuntimePacks.endBatch();
         }
-        for (String name : blocked) {
-            Module m = getModuleByName(name);
-            if (m == null || m.isPermanent()) continue;
-            m.setHidden(true);
-            liteHidden.add(m);
-        }
-        return liteHidden.size();
     }
 
     @SuppressWarnings("unchecked")

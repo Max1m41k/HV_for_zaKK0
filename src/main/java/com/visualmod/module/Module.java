@@ -3,9 +3,21 @@ package com.visualmod.module;
 public abstract class Module {
     private final String name, description;
     private final Category category;
+    /** Что модуль делает прямо сейчас: сокрытие или SafeMode могут расходиться с намерением. */
     private boolean enabled = false;
+    /** Намерение пользователя. Только оно попадает в конфиг, поэтому временное сокрытие настройку не стирает. */
+    private boolean desired = false;
     private boolean hidden = false;
     private boolean permanent = false;
+
+    /**
+     * true, пока состояние меняет код, а не пользователь: снятие сокрытия, загрузка конфига, SafeMode.
+     * Модули, чей onEnable открывает редактор, обязаны это проверять — иначе окно всплывает посреди боя,
+     * когда сервер снял блок-лист.
+     */
+    private static boolean programmatic = false;
+
+    public static boolean isProgrammatic() { return programmatic; }
 
     public Module(String n, String d, Category c){name=n;description=d;category=c;}
 
@@ -14,12 +26,12 @@ public abstract class Module {
         if (com.visualmod.module.modules.util.SafeMode.isLocked()) {
             return;
         }
-        if (hidden && !enabled) {
+        if (hidden) {
             return;
         }
-        enabled=!enabled;
-        if(enabled)onEnable();else onDisable();
-        playToggleSound(enabled);
+        desired = !desired;
+        apply(false);
+        playToggleSound(desired);
     }
 
     private void playToggleSound(boolean turnedOn) {
@@ -44,25 +56,60 @@ public abstract class Module {
     public Category getCategory(){return category;}
     public boolean isEnabled(){return enabled;}
 
+    /** Намерение пользователя — именно его пишет и с него читает конфиг. */
+    public boolean getDesired(){return desired;}
+
     public void setEnabled(boolean e){
         if (permanent) return;
-        if (hidden && e) return;
-        this.enabled=e;
+        desired = e;
+        apply(true);
+    }
+
+    /** Перечитать намерение после смены внешних блокировщиков (скрытие, SafeMode). */
+    public void resync(){
+        if (permanent) return;
+        apply(true);
     }
 
     public boolean isHidden() { return hidden; }
+
+    /**
+     * Сокрытие убирает модуль из GUI и выключает его, но намерение сохраняет: снятое сокрытие возвращает
+     * модуль включённым, если пользователь его включал.
+     */
     public void setHidden(boolean hidden) {
         if (permanent) return;
+        if (this.hidden == hidden) return;
         this.hidden = hidden;
-        if (hidden && enabled) {
-            setEnabled(false);
+        apply(true);
+    }
+
+    private void apply(boolean silent) {
+        boolean target = desired && !hidden
+                && !com.visualmod.module.modules.util.SafeMode.isLocked();
+        if (enabled == target) return;
+        enabled = target;
+        if (!target) {
             onDisable();
+            return;
+        }
+        if (!silent) {
+            onEnable();
+            return;
+        }
+        boolean prev = programmatic;
+        programmatic = true;
+        try {
+            onEnable();
+        } finally {
+            programmatic = prev;
         }
     }
 
     protected void makePermanent() {
         this.permanent = true;
         this.hidden = true;
+        this.desired = true;
         this.enabled = true;
     }
 

@@ -1,7 +1,5 @@
 package com.visualmod.module.modules.player;
 
-import com.visualmod.util.McCompat;
-import net.minecraft.client.render.RenderLayers;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -13,23 +11,33 @@ import com.visualmod.module.settings.Configurable;
 import com.visualmod.module.settings.ModeSetting;
 import com.visualmod.module.settings.Setting;
 import com.visualmod.module.settings.SliderSetting;
+import com.visualmod.util.HudStyle;
+import com.visualmod.util.McCompat;
 import com.visualmod.util.WorldRenderUtil;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
+import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.RenderLayers;
+import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.render.VertexConsumer;
+import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.entity.projectile.thrown.ThrownItemEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
+import org.joml.Vector4f;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -55,17 +63,22 @@ public class HolyItems extends Module implements Configurable {
     /** Одно применение предмета: точка в мире и момент, когда оно началось. */
     public static final class Use {
         public final Entry entry; public final Vec3d center;
+        /** Тот предмет, который применили: по нему рисуется значок маркера. */
+        public final ItemStack icon;
         final long startMs; final double seconds;
 
-        Use(Entry entry, Vec3d center, long startMs, double seconds) {
-            this.entry = entry; this.center = center; this.startMs = startMs; this.seconds = seconds;
+        Use(Entry entry, Vec3d center, ItemStack icon, long startMs, double seconds) {
+            this.entry = entry; this.center = center; this.icon = icon; this.startMs = startMs; this.seconds = seconds;
         }
 
         public double remaining(long now) { return seconds - (now - startMs) / 1000.0; }
     }
 
     /** Снимок руки игрока на прошлом кадре — по нему и видно, что предмет применили. */
-    private record HandSnapshot(String kind, int count, boolean swinging) {}
+    private record HandSnapshot(String kind, int count, boolean swinging, ItemStack icon) {}
+
+    /** Снаряд в полёте: где ловушка применится, известно только в момент, когда снаряд исчезает. */
+    private record Flight(Entry entry, Vec3d pos, ItemStack icon, long seenMs) {}
 
     public static final List<Entry> ENTRIES = new ArrayList<>();
     public static boolean fill = true;
@@ -73,12 +86,15 @@ public class HolyItems extends Module implements Configurable {
     public static int playerColor = 0xFF3BFF6A;
     public static boolean showTimer = true;
     public static boolean dropsChannel = false;
+    /** Броженные ловушки: ставить счётчик в точку, куда упал снаряд. */
+    public static boolean thrownTraps = true;
     public static double effectSeconds = 15.0;
     private static boolean loaded = false;
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
     private static final List<Use> uses = new ArrayList<>();
     private static final Map<Integer, HandSnapshot> hands = new HashMap<>();
+    private static final Map<Integer, Flight> flights = new HashMap<>();
     private static final Set<Integer> entitySeen = new HashSet<>();
     private static final Set<String> logged = new HashSet<>();
     /** Два события одного предмета в одной точке — одно применение (свой игрок видит и руку, и событие). */
@@ -86,8 +102,13 @@ public class HolyItems extends Module implements Configurable {
     private static final long DEDUPE_MS = 1_500L;
     /** Дальше счётчика не видно — подпись всё равно не прочитать. */
     private static final double MAX_DISTANCE = 96.0;
+    /** Смена мира (рестарт, выход на меню) обязана обнулить счётчики: иначе маркер останется на старых координатах. */
+    private static ClientWorld lastWorld;
 
-    static { WorldRenderEvents.AFTER_ENTITIES.register(HolyItems::render); }
+    static {
+        WorldRenderEvents.AFTER_ENTITIES.register(HolyItems::render);
+        HudRenderCallback.EVENT.register(HolyItems::renderHud);
+    }
 
     public HolyItems() { super("HolyItems", "Area of HolyWorld items: red = empty, green = player inside", Category.PLAYER); }
 
@@ -101,10 +122,16 @@ public class HolyItems extends Module implements Configurable {
         l.add(new SliderSetting("Effect Seconds", 1, 120, 1, () -> effectSeconds, v -> effectSeconds = v, "s"));
         l.add(new ModeSetting("Dropped Items", new String[]{"OFF", "ON"},
                 () -> dropsChannel ? 1 : 0, i -> dropsChannel = (i == 1)));
+        l.add(new ModeSetting("Thrown Traps", new String[]{"OFF", "ON"},
+                () -> thrownTraps ? 1 : 0, i -> thrownTraps = (i == 1)));
         return l;
     }
 
     @Override public void onEnable() { load(); }
+
+    @Override public void onDisable() {
+        uses.clear(); hands.clear(); flights.clear();
+    }
 
     private static Path file() { return FabricLoader.getInstance().getConfigDir().resolve("visualmod_holyitems.json"); }
 
@@ -207,7 +234,7 @@ public class HolyItems extends Module implements Configurable {
             try {
                 float td = mc.getRenderTickCounter().getTickProgress(false);
                 scan(mc, td);
-                if (showTimer) drawUses(ctx, mc, td);
+                if (showTimer) drawAreas(ctx, mc);
             } catch (Throwable t) { com.visualmod.util.Diag.once("HolyItems.uses", t); }
 
             Entry e = match(mc.player.getMainHandStack());
@@ -228,10 +255,11 @@ public class HolyItems extends Module implements Configurable {
         try {
             MinecraftClient mc = MinecraftClient.getInstance();
             if (mc.player == null || hand == null) return;
-            Entry e = match(mc.player.getStackInHand(hand));
+            ItemStack stack = mc.player.getStackInHand(hand);
+            Entry e = match(stack);
             if (e == null) return;
             Vec3d p = McCompat.pos(mc.player).add(0.0, mc.player.getHeight() / 2.0 + 0.3, 0.0);
-            register(e, p, "своя рука (" + hand + ")");
+            register(e, p, stack, "своя рука (" + hand + ")");
         } catch (Throwable t) { com.visualmod.util.Diag.once("HolyItems.use", t); }
     }
 
@@ -240,8 +268,13 @@ public class HolyItems extends Module implements Configurable {
 
     private static void scan(MinecraftClient mc, float tickDelta) {
         long now = System.currentTimeMillis();
+        if (mc == null) { lastWorld = null; return; }
+        if (lastWorld != null && lastWorld != mc.world) {
+            uses.clear(); hands.clear(); entitySeen.clear(); flights.clear();
+        }
+        lastWorld = mc.world;
         uses.removeIf(u -> u.remaining(now) <= 0.0);
-        if (mc == null || mc.world == null) { hands.clear(); return; }
+        if (mc.world == null) { hands.clear(); return; }
 
         Set<Integer> alive = new HashSet<>();
         for (PlayerEntity pl : mc.world.getPlayers()) {
@@ -252,19 +285,23 @@ public class HolyItems extends Module implements Configurable {
             String kind = cur == null ? null : cur.name;
             int count = main.isEmpty() ? 0 : main.getCount();
             boolean swinging = pl.handSwinging;
-            HandSnapshot prev = hands.put(pl.getId(), new HandSnapshot(kind, count, swinging));
-            if (prev == null || pl == mc.player) continue;
+            HandSnapshot prev = hands.put(pl.getId(),
+                    new HandSnapshot(kind, count, swinging, main.isEmpty() ? ItemStack.EMPTY : main.copy()));
+            if (prev == null) continue;
+            boolean self = pl == mc.player;
+            // Свою руку снимаем так же, но только под взмахом: смена слота колесом тоже уменьшает стак.
+            if (self && !swinging) continue;
 
             Vec3d pos = pl.getLerpedPos(tickDelta).add(0.0, pl.getHeight() / 2.0 + 0.3, 0.0);
             if (kind != null && kind.equals(prev.kind()) && count < prev.count()) {
                 Entry e = byName(kind);
-                if (e != null) register(e, pos, "чужая рука: расход");
+                if (e != null) register(e, pos, main, self ? "своя рука: расход" : "чужая рука: расход");
                 continue;
             }
             // Последний в стаке предмет: рука опустела и от применения пошёл взмах. Просто сменить слот — без взмаха.
             boolean vanished = kind == null && prev.count() == 1 && prev.kind() != null;
             if (vanished && swinging && byName(prev.kind()) != null) {
-                register(byName(prev.kind()), pos, "чужая рука: взмах");
+                register(byName(prev.kind()), pos, prev.icon(), self ? "своя рука: взмах" : "чужая рука: взмах");
             }
         }
         hands.keySet().retainAll(alive);
@@ -281,55 +318,140 @@ public class HolyItems extends Module implements Configurable {
                 report(e.name, "предмет в мире: скорость " + trim(v.distanceTo(Vec3d.ZERO))
                         + ", стопится на месте — счётчик по каналу Dropped Items");
                 if (!dropsChannel) continue;
-                register(e, item.getLerpedPos(tickDelta).add(0.0, item.getHeight() / 2.0, 0.0), "предмет в мире");
+                register(e, item.getLerpedPos(tickDelta).add(0.0, item.getHeight() / 2.0, 0.0),
+                        item.getStack(), "предмет в мире");
                 continue;
             }
             if (en.getCustomName() == null) continue;
             Entry e = matchName(en.getCustomName().getString());
             if (e == null) continue;
             register(e, en.getLerpedPos(tickDelta).add(0.0, en.getHeight() / 2.0, 0.0),
-                    "сущность " + typeKey(en));
+                    ItemStack.EMPTY, "сущность " + typeKey(en));
         }
+
+        trackLanding(mc, tickDelta, now);
     }
 
-    private static void register(Entry e, Vec3d center, String channel) {
+    /**
+     * Брошенная ловушка: в момент броска точка применения ещё неизвестна, поэтому счётчик ставим
+     * там, где снаряд исчез. Промах в чанк или смена мира не считаются: снимаем наблюдение молча.
+     */
+    private static void trackLanding(MinecraftClient mc, float tickDelta, long now) {
+        if (!thrownTraps) { flights.clear(); return; }
+        for (Entity en : mc.world.getEntities()) {
+            if (!(en instanceof ThrownItemEntity thrown) || en.isRemoved()) continue;
+            Entry e = match(thrown.getStack());
+            if (e == null) continue;
+            flights.put(en.getId(), new Flight(e, en.getLerpedPos(tickDelta).add(0.0, 0.2, 0.0),
+                    thrown.getStack().copy(), now));
+        }
+        flights.entrySet().removeIf(en -> {
+            Flight f = en.getValue();
+            Entity live = mc.world.getEntityById(en.getKey());
+            boolean gone = live == null || live.isRemoved();
+            if (gone && now - f.seenMs() < 3_000) register(f.entry(), f.pos(), f.icon(), "снаряд приземлился");
+            return gone || now - f.seenMs() > 15_000;
+        });
+    }
+
+    private static void register(Entry e, Vec3d center, ItemStack icon, String channel) {
         if (e == null || center == null) return;
         long now = System.currentTimeMillis();
         double secs = e.durationSec > 0 ? e.durationSec : Math.max(1.0, effectSeconds);
         for (Use u : uses) {
             if (u.entry == e && u.center.distanceTo(center) < DEDUPE_BLOCKS && now - u.startMs < DEDUPE_MS) return;
         }
-        uses.add(new Use(e, center, now, secs));
+        uses.add(new Use(e, center, icon == null || icon.isEmpty() ? ItemStack.EMPTY : icon.copy(), now, secs));
         if (uses.size() > 48) uses.remove(0);
         report(e.name, "применение: канал " + channel + ", счёт " + trim(secs) + "с");
     }
 
-    private static void drawUses(WorldRenderContext ctx, MinecraftClient mc, float tickDelta) {
+    /** Зоны активных применений. drawArea сам сдвигает матрицу на камеру — оборачивать её ещё раз нельзя. */
+    private static void drawAreas(WorldRenderContext ctx, MinecraftClient mc) {
         if (uses.isEmpty()) return;
         long now = System.currentTimeMillis();
         Vec3d cam = ctx.gameRenderer().getCamera().getCameraPos();
-
-        ctx.matrices().push();
-        ctx.matrices().translate(-cam.x, -cam.y, -cam.z);
         for (Use u : uses) {
-            double rem = u.remaining(now);
-            if (rem <= 0.0) continue;
+            if (u.remaining(now) <= 0.0) continue;
             if (u.center.squaredDistanceTo(cam) > MAX_DISTANCE * MAX_DISTANCE) continue;
             if (usable(u.entry)) drawArea(ctx, mc, areaBox(u.entry, u.center));
-
-            String text = u.entry.name + "  " + trim(rem) + "с";
-            int color = timerColor(rem);
-            ctx.matrices().push();
-            ctx.matrices().translate(u.center.x, u.center.y + 0.85, u.center.z);
-            ctx.matrices().multiply(ctx.gameRenderer().getCamera().getRotation());
-            ctx.matrices().scale(-0.03f, -0.03f, 0.03f);
-            Matrix4f textMat = ctx.matrices().peek().getPositionMatrix();
-            mc.textRenderer.draw(text, -mc.textRenderer.getWidth(text) / 2f, 0, color, true, textMat,
-                    ctx.consumers(), net.minecraft.client.font.TextRenderer.TextLayerType.NORMAL,
-                    15728880, 0xB0080810);
-            ctx.matrices().pop();
         }
-        ctx.matrices().pop();
+    }
+
+    // ---------- Маркер: значок предмета + остатк ----------
+
+    /**
+     * Экранный слой: мировая точка проецируется на экран, поэтому маркер не прячут туман,
+     * геометрия и малый размер биллборда — он виден всегда, пока счётчик жив.
+     */
+    private static void renderHud(DrawContext hud, RenderTickCounter tc) {
+        try {
+            if (VisualsMod.moduleManager == null) return;
+            HolyItems m = VisualsMod.moduleManager.getModule(HolyItems.class);
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (m == null || !m.isEnabled() || !showTimer) return;
+            if (mc.player == null || mc.world == null || mc.options.hudHidden) return;
+            if (uses.isEmpty()) return;
+
+            Camera cam = mc.gameRenderer.getCamera();
+            Vec3d camPos = cam.getCameraPos();
+            Matrix4f view = new Matrix4f();
+            view.rotate(cam.getRotation());
+            view.invert();
+            view.translate((float) -camPos.x, (float) -camPos.y, (float) -camPos.z);
+            Matrix4f mvp = new Matrix4f(mc.gameRenderer.getBasicProjectionMatrix(tc.getTickProgress(true))).mul(view);
+
+            int sw = mc.getWindow().getScaledWidth();
+            int sh = mc.getWindow().getScaledHeight();
+            long now = System.currentTimeMillis();
+            for (Use u : uses) {
+                double rem = u.remaining(now);
+                if (rem <= 0.0) continue;
+                Vector4f p = new Vector4f((float) u.center.x, (float) u.center.y + 1.1f, (float) u.center.z, 1f);
+                p.mul(mvp);
+                if (p.w <= 1e-4f) continue;
+                int sx = (int) ((p.x / p.w * 0.5 + 0.5) * sw);
+                int sy = (int) ((1 - (p.y / p.w * 0.5 + 0.5)) * sh);
+                boolean edge = sx < 8 || sx > sw - 8 || sy < 8 || sy > sh - 8;
+                drawPill(hud, mc, u, rem, Math.max(8, Math.min(sw - 8, sx)),
+                        Math.max(8, Math.min(sh - 8, sy)), edge, now);
+            }
+        } catch (Throwable t) { com.visualmod.util.Diag.once("HolyItems.hud", t); }
+    }
+
+    private static void drawPill(DrawContext hud, MinecraftClient mc, Use u, double rem,
+                                 int sx, int sy, boolean edge, long now) {
+        String name = u.entry.name;
+        int meters = (int) Math.round(McCompat.pos(mc.player).distanceTo(u.center));
+        String time = trim(rem) + "с";
+        String dist = meters + " м";
+
+        boolean hasIcon = !u.icon.isEmpty();
+        int icon = hasIcon ? 20 : 0;
+        int line1 = mc.textRenderer.getWidth(name);
+        int line2 = mc.textRenderer.getWidth(time) + 6 + mc.textRenderer.getWidth(dist);
+        int w = 8 + icon + Math.max(line1, line2) + 8;
+        int h = 30;
+        int x = sx - w / 2;
+        int y = sy - h - 10;
+        float fade = Math.min(1f, (now - u.startMs) / 260f);
+        int accent = timerColor(rem);
+
+        if (!edge) hud.fill(sx, sy - 2, sx + 1, sy + 6, withAlpha(accent, 0.55f * fade));
+        HudStyle.fillRounded(hud, x - 1.2f, y - 1.2f, w + 2.4f, h + 2.4f, 6.4f, withAlpha(accent, 0.40f * fade));
+        HudStyle.fillRounded(hud, x, y, w, h, 5.2f, withAlpha(0x0A0A12, 0.82f * fade));
+        if (hasIcon) hud.drawItem(u.icon, x + 6, y + (h - 16) / 2);
+        int tx = x + 8 + icon;
+        hud.drawTextWithShadow(mc.textRenderer, Text.literal(name).styled(s -> s.withColor(accent & 0xFFFFFF).withBold(true)),
+                tx, y + 6, 0xFFFFFFFF);
+        hud.drawTextWithShadow(mc.textRenderer, Text.literal(time).styled(s -> s.withColor(accent & 0xFFFFFF).withBold(true)),
+                tx, y + 17, 0xFFFFFFFF);
+        hud.drawTextWithShadow(mc.textRenderer, Text.literal(dist).styled(s -> s.withColor(0x9AA0AA)),
+                tx + mc.textRenderer.getWidth(time) + 6, y + 17, 0xFFFFFFFF);
+    }
+
+    private static int withAlpha(int argb, float a) {
+        return ((int) (Math.min(1f, Math.max(0f, a)) * 255) << 24) | (argb & 0xFFFFFF);
     }
 
     private static Box areaBox(Entry e, Vec3d center) {

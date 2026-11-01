@@ -79,15 +79,20 @@ public class ChatCommandMixin {
                     if (action.equals("add") && args.length > 3) {
                         String key = com.visualmod.util.KeyNames.parseUserInput(args[2]);
                         String modName = args[3].toLowerCase();
+                        com.visualmod.module.Module target =
+                                ConfigManager.moduleManager.getModuleByName(modName);
 
                         if (key == null) {
                             if (player != null) player.sendMessage(Text.of("§d[HolyVisuals] §cНеизвестная клавиша: §e" + args[2] + " §c(пример: z, f6, rshift, DEL, INS, PGUP, PRTSC)"), false);
                         } else if (key.equals(com.visualmod.util.KeyNames.RESERVED_INSERT)) {
                             if (player != null) player.sendMessage(Text.of("§d[HolyVisuals] §cInsert зарезервирован под разблокировку SafeMode."), false);
-                        } else if (ConfigManager.moduleManager.getModuleByName(modName) != null) {
-                            com.visualmod.util.BindRegistry.setBind(modName, key);
+                        } else if (target == null) {
+                            if (player != null) player.sendMessage(Text.of("§d[HolyVisuals] §cМодуль " + modName + " не найден!"), false);
+                        } else if (target.isHidden()) {
+                            if (player != null) player.sendMessage(Text.of("§d[HolyVisuals] §cФункция §e" + modName + " §cсейчас скрыта — бинд назначить нельзя."), false);
+                        } else if (com.visualmod.util.BindRegistry.setBind(modName, key)) {
                             if (player != null) player.sendMessage(Text.of("§d[HolyVisuals] §aБинд установлен: §e" + com.visualmod.util.KeyNames.displayLabel(key) + " §7-> §b" + modName), false);
-                        } else if (player != null) player.sendMessage(Text.of("§d[HolyVisuals] §cМодуль " + modName + " не найден!"), false);
+                        }
                     }
                     else if (action.equals("delete") && args.length > 2) {
                         String key = com.visualmod.util.KeyNames.parseUserInput(args[2]);

@@ -35,7 +35,7 @@ public class ViewModelChanger extends Module implements Configurable {
 
     @Override
     public void onEnable() {
-        if (com.visualmod.config.ConfigManager.applying) return;
+        if (isProgrammatic()) return;
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc != null) mc.setScreen(new ViewModelEditorScreen());
     }

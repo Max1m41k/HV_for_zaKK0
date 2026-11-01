@@ -214,6 +214,41 @@ public final class EventGPS {
         return host.endsWith("holyworld.ru") || host.endsWith("holyworld.me");
     }
 
+    /** Подключение идёт к HolyWorld? Нужен LiteApi: на чужих серверах контроль функций не применяется. */
+    public static boolean onHolyWorld() {
+        String addr = serverAddress();
+        if (addr != null && isHolyHost(addr.toLowerCase(Locale.ROOT).replaceFirst(":[0-9]+$", ""))) return true;
+        // Вход по IP или зеркалу: адрес на HW не похож, но бренд сервера называет себя сам.
+        return isHolyBrand(serverBrand());
+    }
+
+    /** Бренд из пакета `minecraft:brand`: «HolyWorld (Proxy 12-1)», «fabric», «... <- NanoLimbo». */
+    public static String serverBrand() {
+        try {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            return mc.getNetworkHandler() == null ? null : mc.getNetworkHandler().getBrand();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Прокси HolyWorld отдают бренд «HolyWоrld», где «о» — кириллическая U+043E, и на других
+     * прокси она латинская. Поэтому сравниваем по нормализованному виду, а не по исходной строке.
+     */
+    private static boolean isHolyBrand(String brand) {
+        if (brand == null) return false;
+        String s = brand.toLowerCase(Locale.ROOT).replaceAll("§.", "");
+        StringBuilder norm = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            int hom = HOMO_CYR.indexOf(s.charAt(i));
+            norm.append(hom >= 0 ? HOMO_LAT.charAt(hom) : s.charAt(i));
+        }
+        return norm.indexOf("holyworld") >= 0;
+    }
+
+    private static final String HOMO_CYR = "аеорсхукмнтвіј";
+    private static final String HOMO_LAT = "aeopcxykmhtbij";
     private static String digits(String s) {
         if (s == null) return "";
         Matcher m = Pattern.compile("(\\d+)").matcher(s);

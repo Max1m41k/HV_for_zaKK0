@@ -21,7 +21,7 @@ public class NameProtect extends Module {
     @Override
     public void onEnable() {
         MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || mc.player == null || com.visualmod.config.ConfigManager.applying) return;
+        if (mc == null || mc.player == null || isProgrammatic()) return;
         mc.setScreen(new NameProtectScreen(this, mc.currentScreen));
     }
 

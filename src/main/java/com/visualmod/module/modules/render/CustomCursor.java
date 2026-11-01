@@ -58,7 +58,7 @@ public class CustomCursor extends Module implements Configurable {
     @Override
     public void onEnable() {
         MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || com.visualmod.config.ConfigManager.applying) return;
+        if (mc == null || isProgrammatic()) return;
         mc.setScreen(new CursorEditorScreen(mc.currentScreen));
     }
 

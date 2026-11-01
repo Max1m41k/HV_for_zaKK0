@@ -13,7 +13,7 @@ public class HWRules extends Module {
     @Override
     public void onEnable() {
         MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || com.visualmod.config.ConfigManager.applying) return;
+        if (mc == null || isProgrammatic()) return;
         mc.setScreen(new HwRulesScreen(mc.currentScreen));
     }
 }

@@ -102,7 +102,28 @@ public final class RuntimePacks {
         }
     }
 
-    /** Ставит или снимает профиль пака поверх текущих и перезагружает ресурсы. */
+    /** Глубина пакета: пока >0, профили меняем, но перезагрузку копим одну на весь пакет. */
+    private static int batch = 0;
+    private static boolean pendingReload = false;
+
+    /**
+     * Открыть пакет массового включения/выключения модулей. Без него смена конфига дёргает
+     * mc.reloadResources() по разу на каждый пак-модуль, и десятки полных перезагрузок подряд
+     * складываются в минуты почти нулевого FPS.
+     */
+    public static void beginBatch() {
+        batch++;
+    }
+
+    /** Закрыть пакет; на внешнем уровне выполняем единственную накопленную перезагрузку. */
+    public static void endBatch() {
+        if (batch > 0) batch--;
+        if (batch > 0 || !pendingReload) return;
+        pendingReload = false;
+        reloadNow();
+    }
+
+    /** Ставит или снимает профиль пака поверх текущих; внутри пакета лишь помечает перечень изменившимся. */
     public static boolean profileAndReload(String profileId, boolean on) {
         try {
             PackFolder.ensureDir();
@@ -113,11 +134,25 @@ public final class RuntimePacks {
             enabled.removeIf(profileId::equals);
             if (on) enabled.add(profileId);
             m.setEnabledProfiles(enabled);
-            mc.options.refreshResourcePacks(m);
+            if (batch > 0) {
+                pendingReload = true;
+                return true;
+            }
+            return reloadNow();
+        } catch (Throwable t) {
+            Diag.once("RuntimePacks.profile", t);
+            return false;
+        }
+    }
+
+    private static boolean reloadNow() {
+        try {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            mc.options.refreshResourcePacks(mc.getResourcePackManager());
             mc.reloadResources();
             return true;
         } catch (Throwable t) {
-            Diag.once("RuntimePacks.profile", t);
+            Diag.once("RuntimePacks.reload", t);
             return false;
         }
     }
