@@ -132,27 +132,47 @@ def hvAnchor = { String ref, String stamp -> hvSha256(ref + '|' + stamp + '|' + 
 def hvVerifyOnline = { String token ->
     String base = (findProperty('holyWorkerUrl') ?: 'https://visualmod-auth-system2.2011shakurov.workers.dev').toString()
     String endpoint = base + '/api/admin/build'
-    HttpURLConnection c = (HttpURLConnection) new URL(endpoint).openConnection()
-    c.requestMethod = 'POST'
-    c.doOutput = true
-    c.connectTimeout = 8000
-    c.readTimeout = 8000
-    c.setRequestProperty('Authorization', 'Bearer ' + token)
-    c.setRequestProperty('Content-Type', 'application/json; charset=UTF-8')
-    c.outputStream.withCloseable { it.write('{}'.bytes) }
-    int code = c.responseCode
-    // 401/403 — ключ не тот. 404/405 — ключ принят, но роута в воркере ещё нет.
-    // В сообщение попадает только длина ключа: сам ключ в лог и в вывод сборки не идёт.
-    if (code == 401 || code == 403) {
-        throw new GradleException("HV: сервер отверг ключ сборки (HTTP ${code}).\n" +
-                "  Куда стучались : ${endpoint}\n" +
-                "  Ключ взят из  : HOLY_ADMIN_TOKEN, длина ${token.trim().length()} симв.\n" +
-                "  Сверь это значение с ADMIN_TOKEN воркера (Cloudflare → Worker → Settings → Secrets).\n" +
-                "  Если в этом терминале ключ задавали вручную (\$env:...) — собери здесь; переменная\n" +
-                "  уровня пользователя (setx) может хранить другой, более старый ключ.\n" +
-                "  Только проверить компиляцию без ключа: gradlew build -PhvSkipAuth=1")
+    IOException netFail = null
+    // Сеть до Cloudflare у автора нестабильна (часть маршрутов с IPv6 не отвечает вовсе),
+    // поэтому одна попытка с 8 секундами роняла сборку без всякой связи с ключом.
+    for (int attempt = 1; attempt <= 3; attempt++) {
+        try {
+            HttpURLConnection c = (HttpURLConnection) new URL(endpoint).openConnection()
+            c.requestMethod = 'POST'
+            c.doOutput = true
+            c.connectTimeout = 15000
+            c.readTimeout = 15000
+            c.setRequestProperty('Authorization', 'Bearer ' + token)
+            c.setRequestProperty('Content-Type', 'application/json; charset=UTF-8')
+            c.outputStream.withCloseable { it.write('{}'.bytes) }
+            int code = c.responseCode
+            // 401/403 — ключ не тот. 404/405 — ключ принят, но роута в воркере ещё нет.
+            // В сообщение попадает только длина ключа: сам ключ в лог и в вывод сборки не идёт.
+            if (code == 401 || code == 403) {
+                throw new GradleException("HV: сервер отверг ключ сборки (HTTP ${code}).\n" +
+                        "  Куда стучались : ${endpoint}\n" +
+                        "  Ключ взят из  : HOLY_ADMIN_TOKEN, длина ${token.trim().length()} симв.\n" +
+                        "  Сверь это значение с ADMIN_TOKEN воркера (Cloudflare → Worker → Settings → Secrets).\n" +
+                        "  Если в этом терминале ключ задавали вручную (\$env:...) — собери здесь; переменная\n" +
+                        "  уровня пользователя (setx) может хранить другой, более старый ключ.\n" +
+                        "  Только проверить компиляцию без ключа: gradlew build -PhvSkipAuth=1")
+            }
+            if (attempt > 1) println "HV: сервер ответил с попытки ${attempt}"
+            println "HV: сервер принял ключ сборки (HTTP ${code})"
+            return
+        } catch (IOException e) {
+            netFail = e
+            println "HV: попытка ${attempt}/3 — воркер не отвечает (${e.class.simpleName}: ${e.message})"
+            if (attempt < 3) Thread.sleep(1500L * attempt)
+        }
     }
-    println "HV: сервер принял ключ сборки (HTTP ${code})"
+    throw new GradleException(
+            "HV: не удалось достучаться до сервера лицензий — это сеть, а не ключ.\n" +
+                    "  Куда стучались : ${endpoint}\n" +
+                    "  Последняя ошибка: ${netFail.class.name}: ${netFail.message}\n" +
+                    "  Проверь, что воркер жив: curl -4 -X POST ${endpoint} (без ключа должен ответить 401, а не молчать).\n" +
+                    "  Другой адрес воркера: -PholyWorkerUrl=https://< твой workers.dev >\n" +
+                    "  Только проверить компиляцию без ключа: gradlew build -PhvSkipAuth=1")
 }
 
 tasks.register('genHvSignature') {

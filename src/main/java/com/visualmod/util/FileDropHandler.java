@@ -99,7 +99,7 @@ public final class FileDropHandler {
             if (i >= 0) MusicManager.playIndex(i);
         }
 
-        String head = "§d[HolyVisuals] ";
+        String head = "§d[TriadVisual] ";
         StringBuilder sb = new StringBuilder();
         if (!added.isEmpty()) {
             sb.append(autoPlay ? "§aВ плейлист добавлено и играет: " : "§aВ плейлист добавлено: ")

@@ -174,7 +174,7 @@ public final class FaithfulPack {
             Path base = root();
             deleteTree(base.resolve("assets"));
             Files.createDirectories(base);
-            RuntimePacks.writeMcmeta(base, "Holy Visuals - crisp textures");
+            RuntimePacks.writeMcmeta(base, "TriadVisual - crisp textures");
             for (Job job : jobs) {
                 try {
                     if (writeOne(job, spec)) written++;

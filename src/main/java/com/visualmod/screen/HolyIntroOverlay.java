@@ -21,7 +21,7 @@ public class HolyIntroOverlay extends Overlay {
     private static final long FADE_START = 3500;
     private static final long FADE_DUR = 650;
 
-    private static final String HOLY = "Holy";
+    private static final String HOLY = "Triad";
     private static final String VISUAL = "Visual";
 
     private static final int HOLY_COLOR = 0xD645A1;

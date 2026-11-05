@@ -154,7 +154,7 @@ public class CustomTotem extends Module implements Configurable {
     }
 
     private static void say(MinecraftClient mc, String msg) {
-        if (mc != null && mc.player != null) mc.player.sendMessage(Text.of("§d[HolyVisuals] " + msg), false);
+        if (mc != null && mc.player != null) mc.player.sendMessage(Text.of("§d[TriadVisual] " + msg), false);
     }
 
     public static ItemStack remap(ItemStack stack) {

@@ -113,7 +113,7 @@ public final class WaypointManager {
             if (w.eventKey == null) return false;
             boolean reached = Math.hypot(pos.x - w.x, pos.z - w.z) < 30 && Math.abs(pos.y - w.y) < 30;
             if (reached) {
-                mc.player.sendMessage(Text.literal("§d[HolyVisuals] §aТы у метки §e" + w.name), false);
+                mc.player.sendMessage(Text.literal("§d[TriadVisual] §aТы у метки §e" + w.name), false);
                 return true;
             }
             return false;
@@ -163,7 +163,7 @@ public final class WaypointManager {
 
     /** .gps add|remove|s — возвращает строку ответа в чат. */
     public static String command(String[] args, MinecraftClient mc) {
-        String prefix = "§d[HolyVisuals] ";
+        String prefix = "§d[TriadVisual] ";
         if (mc.player == null) return prefix + "§cНет игрока.";
         String action = args.length > 1 ? args[1].toLowerCase(java.util.Locale.ROOT) : "list";
 

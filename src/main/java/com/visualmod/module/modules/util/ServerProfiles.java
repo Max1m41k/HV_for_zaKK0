@@ -95,11 +95,11 @@ public class ServerProfiles extends Module implements Configurable {
             if (!ConfigManager.listConfigs().contains(profile)) {
                 if (!createMissing) return;
                 ConfigManager.saveConfig(profile);
-                say(mc, "§d[HolyVisuals] §7Создан профиль сервера §e" + profile);
+                say(mc, "§d[TriadVisual] §7Создан профиль сервера §e" + profile);
                 return;
             }
             if (ConfigManager.loadConfig(profile, false)) {
-                say(mc, "§d[HolyVisuals] §7Профиль сервера: §e" + profile);
+                say(mc, "§d[TriadVisual] §7Профиль сервера: §e" + profile);
             }
         } catch (Throwable t) {
             Diag.once("ServerProfiles.apply", t);

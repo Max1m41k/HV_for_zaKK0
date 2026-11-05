@@ -70,6 +70,6 @@ public final class PvpSafe {
     private static void notify(String message) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.player == null) return;
-        mc.player.sendMessage(Text.of("§d[HolyVisuals] " + message), false);
+        mc.player.sendMessage(Text.of("§d[TriadVisual] " + message), false);
     }
 }

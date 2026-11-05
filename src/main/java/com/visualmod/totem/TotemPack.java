@@ -69,7 +69,7 @@ public final class TotemPack {
         Files.createDirectories(assets.resolve("models/item"));
         Files.createDirectories(assets.resolve("items"));
         Files.createDirectories(assets.resolve("textures/item"));
-        RuntimePacks.writeMcmeta(base, "Holy Visuals - custom totem");
+        RuntimePacks.writeMcmeta(base, "TriadVisual - custom totem");
         return assets;
     }
 

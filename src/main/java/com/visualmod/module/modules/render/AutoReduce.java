@@ -70,15 +70,15 @@ public class AutoReduce extends Module implements Configurable {
                 highTicks = 0;
                 if (!reduced && ++lowTicks >= 25) {
                     reduced = true;
-                    say(mc, Lang.isRu() ? "§eHolyVisuals §7— бережём FPS: частицы и свечение урезаны"
-                            : "§eHolyVisuals §7— saving fps: particles and glow trimmed");
+                    say(mc, Lang.isRu() ? "§eTriadVisual §7— бережём FPS: частицы и свечение урезаны"
+                            : "§eTriadVisual §7— saving fps: particles and glow trimmed");
                 }
             } else if (fps >= low + 12) {
                 lowTicks = 0;
                 if (reduced && ++highTicks >= holdSeconds * 20) {
                     reduced = false;
-                    say(mc, Lang.isRu() ? "§aHolyVisuals §7— эффекты возвращены"
-                            : "§aHolyVisuals §7— effects restored");
+                    say(mc, Lang.isRu() ? "§aTriadVisual §7— эффекты возвращены"
+                            : "§aTriadVisual §7— effects restored");
                 }
             } else {
                 // Серая зона между порогом и порогом+12: держим текущее состояние, чтобы не мигать.

@@ -10,6 +10,6 @@ public class WindowNameMixin {
 
     @ModifyVariable(method = "setTitle", at = @At("HEAD"), argsOnly = true)
     private String visuals$changeWindowTitle(String originalTitle) {
-        return "Holy Visuals 1.21.4";
+        return "TriadVisual 1.21.11";
     }
 }

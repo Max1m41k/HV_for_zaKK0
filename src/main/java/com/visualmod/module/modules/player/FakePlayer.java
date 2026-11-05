@@ -63,7 +63,7 @@ public class FakePlayer extends Module implements Configurable {
         remove();
         want = false;
         if (mc != null && mc.player != null) {
-            mc.player.sendMessage(Text.of("§d[HolyVisuals] §cFakePlayer работает только в одиночной игре."), false);
+            mc.player.sendMessage(Text.of("§d[TriadVisual] §cFakePlayer работает только в одиночной игре."), false);
         }
         setEnabled(false);
         return false;    }

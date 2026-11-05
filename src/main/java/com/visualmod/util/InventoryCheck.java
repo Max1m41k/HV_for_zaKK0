@@ -203,6 +203,6 @@ public final class InventoryCheck {
 
     private static void notify(MinecraftClient mc, String message) {
         if (mc == null || mc.player == null) return;
-        mc.player.sendMessage(Text.of("§d[HolyVisuals] " + message), false);
+        mc.player.sendMessage(Text.of("§d[TriadVisual] " + message), false);
     }
 }

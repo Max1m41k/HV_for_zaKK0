@@ -43,14 +43,14 @@ public class WelcomeDialog implements PreLaunchEntrypoint {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         } catch (Exception ignored) {}
 
-        JDialog dialog = new JDialog((Frame) null, "Holy-Visual", true);
+        JDialog dialog = new JDialog((Frame) null, "TriadVisual", true);
         dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
         dialog.setAlwaysOnTop(true);
         dialog.setResizable(false);
 
         JLabel text = new JLabel("<html><body style='width: 330px'>"
                 + "<b>Здравствуйте!</b><br><br>"
-                + "Вы запускаете игру с Holy-Visual.<br>"
+                + "Вы запускаете игру с TriadVisual.<br>"
                 + "Просим учесть, что ответственности за блокировки на серверах мы не несём.<br><br>"
                 + "Автор: Max1m41k"
                 + "</body></html>");

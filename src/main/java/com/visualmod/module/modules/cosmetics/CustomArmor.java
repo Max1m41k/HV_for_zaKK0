@@ -16,7 +16,8 @@ import java.util.List;
 
 public class CustomArmor extends Module implements Configurable {
 
-    public static final String[] STYLES = {"HOLY", "EMBER", "FROST"};
+    public static final String[] STYLES = {"TRIAD", "EMBER", "FROST"};
+    private static final String[] STYLE_TEX = {"holy", "ember", "frost"};
     private static final String[] MATERIALS = {"netherite", "diamond", "iron", "gold", "chainmail"};
     private static final EquipmentModel.LayerType[] TYPES = {
             EquipmentModel.LayerType.HUMANOID, EquipmentModel.LayerType.HUMANOID_LEGGINGS};
@@ -26,7 +27,7 @@ public class CustomArmor extends Module implements Configurable {
     private static final EquipmentModel[] CACHE = new EquipmentModel[STYLES.length * MATERIALS.length];
 
     public CustomArmor() {
-        super("CustomArmor", "Holy / ember / frost recolor of worn armor", Category.COSMETICS);
+        super("CustomArmor", "Triad / ember / frost recolor of worn armor", Category.COSMETICS);
     }
 
     @Override
@@ -42,9 +43,9 @@ public class CustomArmor extends Module implements Configurable {
             var rm = net.minecraft.client.MinecraftClient.getInstance().getResourceManager();
             if (rm == null) return;
             int missing = 0;
-            for (String s : STYLES) {
+            for (String tex : STYLE_TEX) {
                 for (String material : MATERIALS) {
-                    Identifier id = Identifier.of("visualmod", s.toLowerCase() + "_" + material);
+                    Identifier id = Identifier.of("visualmod", tex + "_" + material);
                     for (EquipmentModel.LayerType type : TYPES) {
                         Identifier path = new EquipmentModel.Layer(id).getFullTextureId(type);
                         if (rm.getResource(path).isEmpty()) {
@@ -74,7 +75,7 @@ public class CustomArmor extends Module implements Configurable {
         int slot = s * MATERIALS.length + material;
         EquipmentModel model = CACHE[slot];
         if (model == null) {
-            Identifier texture = Identifier.of("visualmod", STYLES[s].toLowerCase() + "_" + MATERIALS[material]);
+            Identifier texture = Identifier.of("visualmod", STYLE_TEX[s] + "_" + MATERIALS[material]);
             model = EquipmentModel.builder()
                     .addLayers(EquipmentModel.LayerType.HUMANOID,
                             EquipmentModel.Layer.create(texture, false))

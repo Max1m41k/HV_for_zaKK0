@@ -169,7 +169,7 @@ public class ClickGUI extends Screen {
     private TextFieldWidget searchField;
     private String searchQuery = "";
 
-    public ClickGUI() { super(Text.literal("HolyVisuals")); }
+    public ClickGUI() { super(Text.literal("TriadVisual")); }
 
     /** Панель классического вида подгоняется под экран: на маленьких окнах она не должна вылезать за края. */
     private void layout() {
@@ -319,7 +319,7 @@ public class ClickGUI extends Screen {
         int lx = guiX + 12, ly = guiY + 10;
         HudStyle.fillRounded(ctx, lx, ly, 18, 18, 6, C_BLUE);
         HudIcons.draw(ctx, "star", lx + 4.5f, ly + 4.5f, 0xFF0B0E18);
-        String brand = "HOLY", tail = " VISUALS";
+        String brand = "Triad", tail = "Visual";
         ctx.drawTextWithShadow(textRenderer, brand, lx + 24, ly + 5, C_TEXT);
         ctx.drawTextWithShadow(textRenderer, tail, lx + 24 + textRenderer.getWidth(brand), ly + 5, C_TEXT_DIM);
 

@@ -119,7 +119,7 @@ public final class EventGPS {
         waiting = null;
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.player != null) mc.player.sendMessage(Text.literal(
-                "§d[HolyVisuals] §aGPS: §e" + ev.displayName() + " §7→ " + c[0] + " " + c[1] + " " + c[2]
+                "§d[TriadVisual] §aGPS: §e" + ev.displayName() + " §7→ " + c[0] + " " + c[1] + " " + c[2]
                         + (boss ? " §8(босс: только подпись, без луча)" : "")), false);
     }
 

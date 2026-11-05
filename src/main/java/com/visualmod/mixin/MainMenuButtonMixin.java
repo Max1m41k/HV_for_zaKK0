@@ -151,7 +151,7 @@ public class MainMenuButtonMixin extends Screen {
                     HudStyle.pack(1f, 0.55f, 0.12f, alpha));
         }
 
-        String titleMain = "HOLY VISUALS";
+        String titleMain = "TriadVisual";
         String titleVer = "  1.21.11";
         float scale = 1.6F;
         int fullW = this.textRenderer.getWidth(titleMain) + this.textRenderer.getWidth(titleVer);

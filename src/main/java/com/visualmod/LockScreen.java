@@ -22,7 +22,7 @@ import net.minecraft.client.input.KeyInput;
 
 public class LockScreen extends Screen {
 
-    private static final String AUTH_SERVER_URL = "https://visualmod-auth-system2.2011shakurov.workers.dev";
+    private static final String AUTH_SERVER_URL = com.visualmod.util.Endpoints.AUTH;
 
     static final String ADMIN_API_URL = "https://visualmod-admin.2011shakurov.workers.dev";
 
@@ -122,7 +122,7 @@ public class LockScreen extends Screen {
         keyField = new TextFieldWidget(textRenderer, fx + 5, fieldRect[1] + 6, fw - 10, 12, Text.literal("Key"));
         keyField.setMaxLength(36);
         keyField.setDrawsBackground(false);
-        keyField.setPlaceholder(Text.literal("§8HOLY-XXXX-XXXX"));
+        keyField.setPlaceholder(Text.literal("§8TRIAD-XXXX-XXXX"));
         addDrawableChild(keyField);
         applyPill = new int[]{fx, cardY + 180, 110, 22};
         adminPill = new int[]{fx + 118, cardY + 180, fw - 118, 22};
@@ -315,7 +315,7 @@ public class LockScreen extends Screen {
         HudStyle.fillRounded(ctx, px, py, cardW, cardH, 10f, applyA(A_CARD, ga));
         gradientBar(ctx, px + 2, py + 2, cardW - 4, 3, A_ACCENT, A_ACCENT2, ga);
 
-        ctx.drawCenteredTextWithShadow(textRenderer, Text.literal("§6HOLY §fVISUALS"), cx + shakeX, py + 14, applyA(0xFFFFFFFF, ga));
+        ctx.drawCenteredTextWithShadow(textRenderer, Text.literal("§6Triad§fVisual"), cx + shakeX, py + 14, applyA(0xFFFFFFFF, ga));
         ctx.drawCenteredTextWithShadow(textRenderer, Text.literal("§8проверка лицензии"), cx + shakeX, py + 27, applyA(0xFFBFBFBF, ga));
 
         renderLock(ctx, cx + shakeX, py + 74, now, ga);

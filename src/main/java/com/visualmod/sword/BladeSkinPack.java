@@ -72,7 +72,7 @@ public final class BladeSkinPack {
         try {
             Path base = root();
             Files.createDirectories(base.resolve("bases"));
-            RuntimePacks.writeMcmeta(base, "Holy Visuals - living blades");
+            RuntimePacks.writeMcmeta(base, "TriadVisual - living blades");
             for (String target : TARGETS) {
                 if (writeOne(target, spec)) done++;
             }

@@ -23,7 +23,7 @@ public class EditAnarchyMixin {
         if (original == null) return;
         String s = original.getString();
         if (s.contains("Анархия") || s.toLowerCase().contains("anarchy")) {
-            cir.setReturnValue(Text.literal("holy-visuals.kesug.com"));
+            cir.setReturnValue(Text.literal(ScoreboardEdit.SITE));
         }
     }
 }

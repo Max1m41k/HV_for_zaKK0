@@ -39,7 +39,7 @@ public final class ShieldPack {
             Files.createDirectories(assets.resolve("models/item"));
             Files.createDirectories(assets.resolve("items"));
             Files.createDirectories(assets.resolve("textures/item"));
-            RuntimePacks.writeMcmeta(base, "Holy Visuals - custom shields");
+            RuntimePacks.writeMcmeta(base, "TriadVisual - custom shields");
             if (variant(assets, "shield_custom", ShieldSpec.CUSTOM, mainArgb, false, false)) done++;
             if (variant(assets, "shield_custom_cd", ShieldSpec.CUSTOM, cdArgb, true, false)) done++;
             if (variant(assets, "shield_knight", ShieldSpec.KNIGHT, 0, false, false)) done++;

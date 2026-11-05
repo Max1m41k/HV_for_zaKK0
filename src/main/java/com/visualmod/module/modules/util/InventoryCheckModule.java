@@ -34,7 +34,7 @@ public class InventoryCheckModule extends Module {
             MinecraftClient mc = MinecraftClient.getInstance();
             if (mc != null && mc.player != null) {
                 mc.player.sendMessage(net.minecraft.text.Text.of(
-                        "§d[HolyVisuals] §cInventoryCheck выключен: §7в режиме PVP /invsee недоступен"), false);
+                        "§d[TriadVisual] §cInventoryCheck выключен: §7в режиме PVP /invsee недоступен"), false);
             }
             return;
         }

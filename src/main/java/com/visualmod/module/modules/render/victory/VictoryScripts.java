@@ -105,7 +105,7 @@ public final class VictoryScripts {
     private static void write(Path f, String style, Script s) {
         try {
             JsonObject root = new JsonObject();
-            root.addProperty("comment", "Holy Visuals: seconds — длительность фазы в секундах, skipClicks — сколько кликов пропускает "
+            root.addProperty("comment", "TriadVisual: seconds — длительность фазы в секундах, skipClicks — сколько кликов пропускает "
                     + "анимацию, camera.mode: off | orbit (облёт жертвы) | victim (из глаз жертвы) | behind (из-за нашей спины). "
                     + "В 3D-сцене (настройка Scene) режим off автоматически превращается в мягкий облёт, иначе актёров в кадре не будет.");
             root.addProperty("style", style);

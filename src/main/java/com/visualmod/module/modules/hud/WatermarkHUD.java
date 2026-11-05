@@ -15,7 +15,7 @@ public class WatermarkHUD extends Module {
 
     public void render(DrawContext ctx, int x, int y) {
         if (!isEnabled() || mc.player == null) return;
-        String text = "Holy-Visual ";
+        String text = "TriadVisual ";
         int w = mc.textRenderer.getWidth(text) + 14 + HudIcons.STEP, h = 18;
         GUIAnimations.Transform t = GUIAnimations.globalTransform();
         HudStyle.applyTransform(ctx, x, y, w, h, t);

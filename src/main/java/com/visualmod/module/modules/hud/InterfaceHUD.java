@@ -254,7 +254,7 @@ public class InterfaceHUD extends Module implements Configurable {
     }
 
     private void collect(MinecraftClient mc, List<Integer> ids, List<String> texts, List<Integer> colors) {
-        if (partWatermark) { add(ids, texts, colors, 0, "§6Holy-Visual", 0xFFFFAA55); }
+        if (partWatermark) { add(ids, texts, colors, 0, "§6TriadVisual", 0xFFFFAA55); }
 
         if (partFps) {
             int fps = mc.getCurrentFps();

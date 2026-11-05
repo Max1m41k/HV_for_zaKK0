@@ -1049,7 +1049,7 @@ Fabric проверка пропускается. Оба зелёных прог
 - `addIcon` создаёт `ButtonWidget` с сообщением = подпись тултипа, и в отрисовке у квадратной
   кнопки `textWidth` принудительно 0 — сообщение не рисуется. Поэтому надпись в кнопке живёт не
   в `getMessage()`, а в префиксе глифа `"text:FT"`, и рисуется методом `badge(...)` через
-  `getMatrices().scale(1.4F)` (так же, как заголовок «HOLY VISUALS»). Тултип остаётся полным
+  `getMatrices().scale(1.4F)` (так же, как заголовок «Triad» + «Visual»). Тултип остаётся полным
   именем: «Funt1m1», «AltManager».
 - Диапазон значений `glyph` теперь: имя глифа `HudIcons`, либо `logo`, либо `gears`, либо
   `text:<надпись>` — ветки в цикле отрисовки.
@@ -1067,3 +1067,239 @@ Fabric проверка пропускается. Оба зелёных прог
 `python C:\hvchk\audit2.py` — 152 хука, 1 проблема и она же была до правки (`NOJAVAP
 ChatPlusMixin:30` — в дампе `jp11s.txt` от 28.10 нет класса `org.joml.Matrix3x2fStack`, это
 пробел аудита, а не кода). Сборку в игре и сами значки пока не смотрели.
+
+
+
+## Реним бренда (2026-11-05): Holy Visuals → TriadVisual
+
+Причина: старое имя было слишком похоже на название проекта (HolyWorld), и на модерации это
+не прошло. Бренд — **TriadVisual**; Telegram-бот переименован в «TriadVisual», его юзернейм
+теперь `TriadVisualkeysBOT` (юзернейм и ключ в Cloudflare Максим поменял сам).
+
+### Мод: что изменено (то, что видит игрок)
+
+- Ватермарк — `module/modules/hud/WatermarkHUD.java:18` → `TriadVisual `.
+- Заголовок окна игры — `mixin/WindowNameMixin.java:13` → `TriadVisual 1.21.11` (там же убран
+  устаревший «1.21.4», который остался от прошлого дерева).
+- Главное меню — `mixin/MainMenuButtonMixin.java:154`, `titleMain = "TriadVisual"`. Подзаголовок
+  «Visual client для HolyWorld» не тронут: это про сервер, а не про мод.
+- ClickGUI — `gui/ClickGUI.java:172` (название окна) и `:322` (двухцветная шапка: `brand =
+  "Triad"`, `tail = "Visual"`; раньше было «HOLY» + « VISUALS»).
+- Экран лицензии — `LockScreen.java:318` → `§6Triad§fVisual`, плейсхолдер поля ключа
+  `:125` → `§8TRIAD-XXXX-XXXX`.
+- Интро-анимация — `screen/HolyIntroOverlay.java:24-25` (`Holy`/`Visual` → `Triad`/`Visual`).
+  Layout считается через `tr.getWidth(HOLY + VISUAL)`, поэтому смена длины слова центровку не ломает.
+- HUD-панель — `module/modules/hud/InterfaceHUD.java:257` → `§6TriadVisual`.
+- Префиксы сообщений в чате `§d[HolyVisuals] ` → `§d[TriadVisual] `: `ChatCommandMixin` (30 строk),
+  `FileDropHandler`, `EventGPS`, `util/ConfigGuard`, `WaypointManager`, `InventoryCheck`,
+  `PvpSafe`, `ServerProfiles`, `InventoryCheckModule`, `BladeSkinLink`, `CustomTotem`,
+  `CustomShield`, `FakePlayer`; в `AutoReduce` — и русская, и английская ветки.
+- Приветственный диалог до запуска игры — `WelcomeDialog.java` (заголовок окна и текст
+  «Вы запускаете игру с TriadVisual»).
+- `resources/fabric.mod.json:5` → `"name": "TriadVisual"`. **id мода `visualsmod` не меняли**: от
+  него зависят пути ресурсов (`assets/visualmod/...`) и имя каталога конфига.
+- Описания рантайм-паков, которые игрок видит в списке ресурспаков: `ShieldPack`, `TotemPack`,
+  `BladeSkinPack`, `FaithfulPack`, `GlassPack` → «TriadVisual - custom shields / totem / living
+  blades / crisp textures / transparent items».
+- Поле `"credit"` в 9 JSON-моделях предметов (`assets/visualmod/models/item/*.json`).
+- Стиль брони в `CustomArmor`: подпись `HOLY` → `TRIAD` (плюс описания в `Lang.java:98` и README).
+  Файлы текстур остались `holy_*.png`, поэтому добавлен `STYLE_TEX` — строка из GUI больше не
+  участвует в поиске текстуры. В конфиге стиль хранится индексом, так что настройки игроков не
+  ломаются, а переименование файлов рисковать не заставило.
+
+### Мод: что осталось со старым именем и почему
+
+Это не пропущенные места, а совместимость с данными, которые уже лежат у игрока:
+
+- `ConfigManager.GENERATOR = "triadvisual"`, но при загрузке принимаются оба маркера —
+  `OUR_GENERATORS = Set.of(GENERATOR, "holy-visuals")` (`config/ConfigManager.java:35`). Без этого
+  собственный конфиг игрока, сохранённый до ренима, отвергался бы как «конфиг от другого мода».
+- Имена папок рантайм-паков `HolyVisualsShield|Totem|Blade|Faithful|Glass` и
+  `util/RuntimePacks.java:81 startsWith("HolyVisuals")`: переименование оставило бы у игроков
+  осиротевшие включённые паки, которые мод уже не чистит.
+- Каталоги данных, которые мод не создаёт заново без потери содержимого: `Holy-visual info/…`
+  (музыка, браузер, иконки), `%APPDATA%\HolyVisuals\off` (файл-выключатель ярлыков),
+  `holy_accounts.json` (аккаунты AltManager).
+- Внутренние идентификаторы: namespace/id `visualmod`/`visualsmod`, классы `HolyEvents`,
+  `HolyItems`, `HolyAnarchyManager`, `HolyIntroOverlay`, имена потоков `HolyVisuals-*`,
+  env-переменная `HOLY_ADMIN_TOKEN`, mixin-методы `holy$*`.
+- `KillStreakBanner.java:37` — «HOLY TERROR» это название серии киллов, а не бренд; менять
+  одной строкой, если мешает.
+- `ScoreboardEdit.SITE` = `holy-visuals.kesug.com` — адрес сайта внутри мода, его можно менять
+  только синхронно с реальным доменом. С 2026-11-05 там `triad-visual.kesug.com`, а
+  `EditAnarchyMixin` берёт это значение, а не свой литерал (см. раздел «Фикс 8»).
+- `WelcomeDialog.TG_URL = https://t.me/Holy_visual` — это канал, а не бот; новый адрес неоткуда
+  взять, поэтому не трогали.
+
+### Сайт и воркер (`C:\Users\Public\hv_site`)
+
+- Статика: `index.html` (10 вхождений), `configs.html` (5), `adminkey.html` (title + логотип),
+  `style.css`, `README-SITE-1.5.md`, `README.md`.
+- `worker-merged.js` и `worker-merged.mjs` (по 15): тексты бота, имена выдаваемых файлов
+  `TriadVisual.jar` / `TriadVisual-<channel>.jar`, «Обновление беты TriadVisual», «Тест от TriadVisual ✅».
+- Маркер «это конфиг нашего мода»: `CFG_OURS = ['triadvisual', 'holy-visuals']`
+  (`configs.html:266`, `worker-merged.js/.mjs:793`) и проверка `CFG_OURS.includes(o.generator)`.
+  Уже выложенные на витрину конфиги со старым маркером продолжают считаться своими.
+- Формат ключей: `KEY_RE = /^(?:TRIAD|HOLY)-[A-Z0-9]{4}-[A-Z0-9]{4}-(30D|1Y|EVER|BETA)$/`,
+  генерация — `TRIAD-…`. Ранние `HOLY-…` остаются валидными (активация, продление, привязка по
+  `?start=`). На стенде: `TRIAD-…`/`HOLY-…` принимаются, строчные и битые — отвергаются.
+- Не тронуто: `emailjs.send("holy-service22", …)` (id сервиса в EmailJS), ключ localStorage
+  `holy_admin_settings`, `SITE_ORIGIN`/домен.
+- Ссылка на бота нигде не зашита: `newLinkUrl()` (`worker-merged.js:224`) собирает
+  `https://t.me/${env.BOT_USERNAME}?start=…`, поэтому смена юзернейма бота — это только вар
+  `BOT_USERNAME`.
+
+### tgWebhook: нужен ли он после смены юзернейма и ключа
+
+Нужен. На `POST /tg/webhook` (`worker-merged.js:65, 291`) висят привязка Telegram после `/start`,
+подтверждения оплат (кнопка в админке) и команды `/updates_on|off` — без вебхука бот перстаёт
+получать апдейты, и привязать Telegram нельзя. На доставку сообщений смена юзернейма не влияет:
+воркер пишет по `chat_id`. Но для нового бота вебхук надо зарегистрировать заново, и сам воркер
+этого не делает (`setWebhook` в коде нет — есть только диагностика `adminTgDebug`, которая зовёт
+`getMe` и `getWebhookInfo`).
+
+По шагам: (1) вар `BOT_USERNAME = TriadVisualkeysBOT`; (2) `BOT_TOKEN` = токен нового бота, если
+меняли; (3) один раз вызвать
+`https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<worker>/tg/webhook&secret_token=<TG_WEBHOOK_SECRET>`,
+где секрет — ровно тот же, что в вар/секрет `TG_WEBHOOK_SECRET` воркера (иначе проверка
+`safeEq` в `tgWebhook` отбрасывает запрос, и в логе воркера видна фраза «секрет не совпал»);
+(4) открыть админ-диагностику и проверить, что `webhook.url` = адрес воркера, а `last_error` пуст.
+
+### Проверки
+
+- Офлайн-гейт: `python C:\hvchk\mk_jargs11.py` → `javac @C:\hvchk\jargs11.txt` (435 источников,
+  `-proc:none`) — exit 0, только прежние notes про deprecated/unchecked.
+- `python C:\hvchk\audit2.py` — 152 хука, 1 проблема, и она же до правки (`NOJAVAP
+  ChatPlusMixin:30` — в дампе нет `org.joml.Matrix3x2fStack`, пробел аудита).
+- Воркер: `node _test_worker.mjs` — «ВСЁ ЗЕЛЁНОЕ»; `node C:\hvchk\check_cfg_ours.cjs` — новый
+  маркер `ours=true`, старый маркер `ours=true`, чужой конфиг отвергнут.
+- Тест `KEY_RE` на 6 формах ключей — 3 наших принимаются, 3 битых отвергаются.
+- `python C:\hvchk\site_zip11.py` — архив сайта `C:\Users\Public\TriadVisual-site-1.5.zip`,
+  11 записей, список файлов совпадает со старым `hv_site_v1.5.zip`.
+- Отдаваемые архивы пересобраны под новым именем: `C:\work\TriadVisual-1.21.11-src-full.zip` и
+  `C:\work\TriadVisual-1.21.11-github.zip` (`C:\hvchk\rezip_from_index.py`, содержимое = `git ls-files`);
+  прежние `HolyVisuals-1.21.11-*.zip` не удалены, а сложены в `C:\hvchk\bak_zip_1105\`.
+- Сборка: `./gradlew build -Pmc=1.21.11 -PnoUpload` падает на `:genHvSignature` с HTTP 401 — это
+  рассинхрон `HOLY_ADMIN_TOKEN` (локально) и `ADMIN_TOKEN` (секрет воркера), к рениму отношения
+  нет. С `-PhvSkipAuth=1` сборка зелёная: BUILD SUCCESSFUL 45 s, `build/libs/visualsmod-1.21.11.jar`
+  (15,0 МБ), и в логе честно написано «DEV-сборка: jar с таким маркером у игроков не запустится».
+  Проверено внутри jar: `fabric.mod.json` → `"name": "TriadVisual"`, в классах читаются
+  `TriadVisual 1.21.11` (окно), `TriadVisual ` (ватермарк), `Triad`+`Visual` (ClickGUI и интро).
+
+## Онлайн-гейт сборки: Connect timed out (2026-11-05)
+
+`./gradlew build` падал на `:genHvSignature` с `java.net.SocketTimeoutException: Connect timed
+out` (build.gradle, строка записи тела запроса). Это НЕ про ключ: тем же вечером
+`curl -4 -X POST https://visualmod-auth-system2.2011shakurov.workers.dev/api/admin/build` без
+токена отвечает **401 за 0.4–0.6 с** — воркер живой, роут на месте.
+
+Диагностика, которая была сделана (артефакты в `C:\hvchk\probe_*.txt`, `C:\hvchk\HvProbe.java`
+— вне дерева исходников, это одноразовые зонды):
+
+- DNS `visualmod-auth-system2.2011shakurov.workers.dev` отдаёт 2 AAAA + 2 A.
+- По обоим IPv4 — 401 за ~0.4 с; по обоим IPv6 — соединения нет вовсе (`curl --resolve` по
+  v6-адресу: «Could not connect» мгновенно). Локального IPv6-адреса на машине нет, только
+  link-local `fe80::…`.
+- `curl -4` одним проходом тоже уходил в 12-секундный таймаут при тех же адресах, которые
+  позже ответили за 0.4 с → путь до Cloudflare нестабилен сам по себе.
+- Тот же код в JVM из `~/.jdks\ms-21.0.12.1` (одна попытка, connectTimeout 8000) отработал за
+  532 мс и взял IPv4 — то есть деградация плавающая, а не постоянная.
+
+Причина падения: у гейта была **одна попытка** и `connectTimeout = 8000` — любой сетевой
+зыкок ронял сборку, а в выводе оставалась голая строка `SocketTimeoutException` без объяснения.
+
+Что сделано:
+
+- `gradle.properties`: в `org.gradle.jvmargs` добавлен `-Djava.net.preferIPv4Stack=true`
+  (демон форкается на каждую сборку, `org.gradle.daemon=false`, так что флаг доходит до JVM,
+  которая делает запрос).
+- `build.gradle`, `hvVerifyOnline`: таймауты 15 с, до 3 попыток с паузами 1.5/3 с, промежуточные
+  сетевые сбои печатаются как `HV: попытка N/3 — воркер не отвечает (…)`.
+- После исчерпания попыток сборка падает отдельным сообщением «не удалось достучаться до
+  сервера лицензий — это сеть, а не ключ», с командами проверки и напоминанием про
+  `-PholyWorkerUrl=` и `-PhvSkipAuth=1`.
+- 401/403 по-прежнему валят сборку тем же текстом про `ADMIN_TOKEN` — гейт не ослаблен:
+  сетевая ошибка не превращается в «проверку прошли».
+
+Проверено: `build -Pmc=1.21.11 -PnoUpload` (с ключом в окружении) дошёл до сервера и получил
+настоящий **401** — значит коннект есть; `… -PhvSkipAuth=1` → BUILD SUCCESSFUL 29 с,
+`build/libs/visualsmod-1.21.11.jar` 15 052 692 байта, маркер DEV. Годный (не-DEV) jar всё ещё
+блокирует рассинхрон `HOLY_ADMIN_TOKEN` ↔ секрет воркера `ADMIN_TOKEN` — лечится только в
+Cloudflare.
+
+## Фикс 8 (2026-11-05): новый домен `triad-visual.kesug.com` и «не грузилась картинка»
+
+### Настоящая причина «картинка не грузится на чужих устройствах» — на стороне хостинга
+
+Kesug.com (бесплатный VistaPanel-хостинг) вставляет перед каждым HTML-документом свою JS-проверку:
+850-байтовый лендинг с `/aes.js`, который ставит cookie `__test` и перегружает адрес с `?i=1`.
+Замеры 2026-11-05 (скрипты-зонды `C:\hvchk\site_check.py`, `C:\hvchk\challenge_probe.py`,
+`C:\hvchk\site_dump.py`, вывод в `C:\hvchk\site_check.txt`, `challenge_probe.txt`, `site_dump.txt`
+— всё вне дерева исходников):
+
+- `/index.html` с обычным браузерным UA, с UA Telegram и с «уже после редиректа» (`?i=1`, наш
+  подставной cookie) — везде 200 и 849–870 байт лендинга, а не наших 37 374 байт;
+- `/assets/badge.png` с UA Telegram → 200 `image/png`; `/style.css?v=15` → 200 `text/css`. То есть
+  **хостинг задерживает только документы, картинки и CSS проходят**;
+- старый `holy-visuals.kesug.com` тоже отдаёт лендинг (проверка не зависит от домена).
+
+Отсюда: браузер проверку проходит (JS ставит cookie и один раз перезагружает страницу) — поэтому у
+него сайт «красивый»; устройство с запрещёнными cookie / JavaScript (приватный режим, «максимальная
+защита» в Яндекс.Браузере и Brave, WebView мессенджера без cookie) проверку не проходит → пустая
+страница или цикл редиректа. Боты превью (Telegram/WhatsApp/VK/Discord) JS не исполняют вовсе, поэтому
+картинки-превью у ссылки на этот домен не будет ни при каких `og:image`. На форуме хостинга официальный
+ответ: проверка включена на всех бесплатных тарифах и снимается только платным тарифом — настроек в
+панели нет.
+
+### Что сделано на нашей стороне
+
+Сайт (`C:\Users\Public\hv_site`, подробности в `README-SITE-1.5.md`, раздел 0):
+
+- `og:image`/`twitter:image`/`og:url` на `index.html` и `configs.html`, абсолютные, на новый домен;
+  собрана картинка `assets/og.png` (1200×630, 38 КБ, `C:\hvchk\mk_og.py`).
+- Аватарки перестали зависеть от внешней картинки: `data-srcs="внешняя | assets/steve.png"` и хелпер
+  `hardenAvatars()` (переключение по `onerror` **и** по 3-секундному таймауту — ловит и «вечное
+  зависание», и блокировку трекер-домена). Добавлен в `index.html` (онлайн), `configs.html` (витрина,
+  второй в цепи — аватарка Telegram), `adminkey.html` (таблицы игроков и конфигов). Запасная картинка
+  `assets/steve.png` — 48×48, 260 Б (`C:\hvchk\mk_steve.py`), её раньше не существовало.
+- `clearRecentOrders()` в админке вызывал `POST https://workers.dev/...` — голый домен Cloudflare,
+  эндпоинта там нет, кнопка не работала никогда. Переведена на `adminApi('/api/admin/clear-orders')`.
+- Проверено живьём: `style.css` 28 826 Б отдаётся, `assets/fonts/*.woff2` отдаются, Inter применяется.
+  На хостинге пока 404 для новых `assets/steve.png` и `assets/og.png` — их надо залить; `badge.png`
+  на проде 540 Б против локальных 434 Б, значит лежит прежняя версия → `assets/` перезалить целиком.
+
+Мод (`C:\work\vm11`):
+
+- `ScoreboardEdit.SITE` → `triad-visual.kesug.com`; `EditAnarchyMixin:26` теперь возвращает это
+  значение, а не отдельный литерал домена (правил два места — одно).
+- `util/AssetLoader.java` удалён: 0 вызовов во всём дереве (проверено грепом по `C:\work\vm11` без
+  `build/`), внутри был мусорный `ASSET_URL = "https://workers.dev"`, `System.exit(0)` на любом
+  не-200 и JOptionPane про «нарушение целостности» — то есть при случайном вызове вырубал бы игру.
+  Копия лежит в `C:\hvchk\deadcode-backup\AssetLoader.java.bak`.
+- `LockScreen.AUTH_SERVER_URL` = `com.visualmod.util.Endpoints.AUTH` (был дубликат строки). Теперь
+  адрес воркера в моде живёт в одном месте — `Endpoints.java:6`; `HolyBadge.BASE` брал его и раньше.
+
+### Воркер: переименование в Cloudflare ничего не сломало, адрес менять не нужно
+
+Зонд `C:\hvchk\worker_probe.py` (вывод `worker_probe.txt`) + `cors_probe.py` (`cors_probe.txt`):
+
+- `visualmod-auth-system2.2011shakurov.workers.dev/api/players` → 200 с настоящим JSON;
+  `/api/configs/build` → `{"ok":true,"v":"cfg-17.10"}` — код в продe тот же, перекатывать нечего;
+- `visualmod-admin.2011shakurov.workers.dev` → 405 (жив), `visualmod-auth-system` → 405 (тоже жив);
+- кандидатов с новым именем нет: `triad-visual`, `triadvisual`, `triad-visual-auth`,
+  `triad-visual-auth-system`, `triadvisual-auth`, `triad-visual-keys`, `triadvisualkeys`,
+  `visualmod-triad`, `triad-visual-admin`, `visualmod-admin2` — все 404. Вывод: воркер не
+  переименован (или переименование не применилось), менять адреса в коде не требуется;
+- вар `SITE_ORIGIN` уже обновлён на новый домен: ответ воркера
+  `Access-Control-Allow-Origin: https://triad-visual.kesug.com` независимо от того, какой Origin
+  подставлен (со старым доменом в ответе его нет) → CORS с нового домена работает, API не «отвалился»
+  после переезда.
+
+### Проверки этой пачки
+
+- `python C:\hvchk\mk_jargs11.py` → `sources=434` (было 435, минус удалённый `AssetLoader`);
+  `javac @C:\hvchk\jargs11.txt` → exit 0.
+- `python C:\hvchk\audit2.py` → `hooks 152 problems 1`, та же единственная `NOJAVAP ChatPlusMixin:30`.
+- `python C:\hvchk\site_zip11.py` — в список записей добавлены `assets/steve.png` и `assets/og.png`
+  (11 → 13 записей).
+

@@ -29,7 +29,10 @@ public class ConfigManager {
 
     public static String currentConfigName = "default";
 
-    public static final String GENERATOR = "holy-visuals";
+    public static final String GENERATOR = "triadvisual";
+    // Файлы, сохранённые до переименования бренда, несут старый маркер — иначе .loadconfig
+    // отверг бы собственный конфиг игрока как «конфиг от другого мода».
+    private static final java.util.Set<String> OUR_GENERATORS = java.util.Set.of(GENERATOR, "holy-visuals");
     public static final int CONFIG_VERSION = 1;
 
     public static String lastError = null;
@@ -145,9 +148,9 @@ public class ConfigManager {
 
     private static String whyNotOurConfig(JsonObject json) {
         if (!json.has("modules") || !json.get("modules").isJsonObject())
-            return "похоже, это не конфиг holy-visuals: нет раздела modules";
+            return "похоже, это не конфиг TriadVisual: нет раздела modules";
         if (json.has("generator") && !json.get("generator").isJsonNull()
-                && !GENERATOR.equals(json.get("generator").getAsString()))
+                && !OUR_GENERATORS.contains(json.get("generator").getAsString()))
             return "это конфиг от другого мода (generator: " + json.get("generator").getAsString() + ")";
         if (json.getAsJsonObject("modules").entrySet().isEmpty())
             return "в конфиге нет ни одного модуля — пустой файл";

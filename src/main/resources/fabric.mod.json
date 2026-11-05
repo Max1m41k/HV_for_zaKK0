@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "visualsmod",
   "version": "1.5",
-  "name": "HolyVisuals",
+  "name": "TriadVisual",
   "mixins": [
     "visualmod.mixins.json"
 

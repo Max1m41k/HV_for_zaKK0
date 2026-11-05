@@ -24,7 +24,7 @@ public final class ConfigGuard {
 
     public static final int KEEP = 5;
     private static final long MIN_GAP_MS = 30_000;
-    private static final String MARK = "§d[HolyVisuals] ";
+    private static final String MARK = "§d[TriadVisual] ";
     private static final Gson GSON = new Gson();
 
     public static File backupDir() {

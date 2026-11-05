@@ -21,7 +21,7 @@ import java.util.regex.Pattern;
 
 public class ScoreboardEdit extends Module implements Configurable {
 
-    public static final String SITE = "holy-visuals.kesug.com";
+    public static final String SITE = "triad-visual.kesug.com";
 
     private static final Pattern ANARCHY = Pattern.compile(
             "(?iu)(?<![\\p{L}])(?:(?:соло|дуо|трио|клан|solo|duo|trio|clan)\\s*)?"

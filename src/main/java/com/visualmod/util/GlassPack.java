@@ -195,7 +195,7 @@ public final class GlassPack {
             Path base = root();
             deleteTree(base.resolve("assets"));
             Files.createDirectories(base);
-            RuntimePacks.writeMcmeta(base, "Holy Visuals - transparent items");
+            RuntimePacks.writeMcmeta(base, "TriadVisual - transparent items");
             for (Job job : jobs) {
                 try {
                     if (writeOne(job, alpha, color, tint)) written++;
