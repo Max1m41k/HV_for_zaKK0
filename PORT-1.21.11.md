@@ -1303,3 +1303,62 @@ Kesug.com (бесплатный VistaPanel-хостинг) вставляет п
 - `python C:\hvchk\site_zip11.py` — в список записей добавлены `assets/steve.png` и `assets/og.png`
   (11 → 13 записей).
 
+## Ночная смена (2026-11-05): сколько игроков и почему файлы не залиты
+
+Код мода в эту смену не менялся — ни одной правки в `C:\work\vm11\src`. Собрано два итога:
+точное число пользователей из боевого KV и сверка «прод vs локал» по файлам сайта.
+Подробности и таблицы — в `C:\Users\Public\hv_site\README-SITE-1.5.md`, раздел «Ночная смена
+2026-11-05». Здесь только то, что важно для мода и для будущих замеров.
+
+- **Игроков: 51 зарегистрированный аккаунт, из них 23 с лицензией.** Снято прямым чтением
+  неймспейса `VISUALMOD_KEYS_DATABASE` (`user:` = 51, `tg:` = 51, `idx:players` = 51). Ключей
+  выпущено 76 (BETA 67, 30D 7, EVER 1, 1Y 1), активировано 27, отозвано 0, уникальных HWID 23.
+- **Публичный список игроков в моде и на сайте обрезан до 20** — это лимит `playersPublic()`
+  в воркере (`searchIdx(..., 20)`), а не реальное число. Если где-то нужно «сколько нас», брать
+  `idx:players`, а не длину `/api/players`. Админский `/api/admin/players` обрезан до 30.
+- **Залить статику на хостинг сам я не смог**: `dash.infinityfree.com` отвечает «These credentials
+  do not match our records.» на оба пароля, FTP `ftpupload.net` с `gjxnf` → `530 Login
+  authentication failed` (для FTP там нужен логин `if0_…`, а не ник). Попытки входа прекращены,
+  перебором не лез. Статику (7 файлов: 3 HTML + `badge.png`, `favicon.png`, `steve.png`, `og.png`)
+  загружает пользователь через файловый менеджер VistaPanel.
+- **Оба пароля, написанные в переписку, подлежат смене** (хостинг и Cloudflare).
+- **В Cloudflare ничего не менялось**: воркер прежний, биндинг KV сверен через
+  `workers/services/…/environments/production/settings` → `result.bindings` (не
+  `environment_variables`), 2FA не включена (страница `two-factor-interstitial` — апселл, а не
+  запрос кода), зон в аккаунте нет → `kesug.com` живёт не на Cloudflare, и перенос туда был бы
+  новой инфраструктурой, которой он не просил. `worker-merged.js` не правился и не деплоился.
+- Зонды на эту часть: `C:\hvchk\prod_diff.py` → `prod_diff.txt` (сравнение размера прод/локал,
+  гейт определяется по `aes.js` в первых 900 байтах), `C:\hvchk\ftp_upload_site.py` →
+  `ftp_probe.txt` (отчёт без паролей).
+
+
+## HV → TV: картинки бренда (2026-11-06)
+
+Претензия: «на обложке и в глав меню у нас также HV». В дереве 1.21.11 старый бренд остался в
+двух семействах картинок, обе заменены на TriadVisual.
+
+- **Фон главного меню** — был `bg_hv.png` (крупные буквы «HV» на тёмном фоне). Новый
+  `assets/visualmod/textures/gui/bg_tv.png` (1376×768, те же буквы «TV» в той же стилистике,
+  подогнан cover-resize: scale = max(W/w, H/h) + center crop, композиция не обрезана).
+  Ссылки: `MainMenuButtonMixin:27`, `AccountScreen:40`.
+- **Значки окна и ярлыка** — были `hv_icon.png/_16/_32/_48/.ico`. Новые `tv_icon.*` в
+  `assets/visualmod/icons/` (эмблема-треугольник TV, .ico собран слоями 16/32/48/256).
+  Ссылки: `ShortcutIcon:23` (пишет .ico в %APPDATA% для ярлыка), `WindowIconChanger:28-33`
+  (массив переименован в `TV_ICONS`, 4 размера для `glfwSetWindowIcon` и таскбара).
+- **Обложка экранов анархий** — `bg_hl.png` (крупные буквы «HL» + треугольник поверх горящего
+  TNT-города) была фоном в `FunTimeScreen` (кнопка «FT» из главного меню) и `HolyWorldScreen`
+  («Выбор Лайт анархии»). Обе теперь рисуют `bg_tv.png`; сам файл удалён из дерева.
+  Копия `assets/minecraft/icons/bg_hl.png` (добавлена пользователем в `2c9d89c`, кодом не
+  referenced) оставлена как есть — не моё удалять.
+- **Не трогали**: `hw_logo.png` (32×32) и `textures/font/hw_badge.png` — это логотип сервера
+  HolyWorld, а не мода; `fon_icon.png` (дерево) и `fon/1..6.png` — без букв.
+- Дамп старых ассетов и AI-оригиналов: `C:\Users\Public\hv_tex\hv-to-tv-2026-11-06\`
+  (`bg_hv.png`, `bg_hl.png`, 5× `hv_icon*` + 2 исходника из `D:\visualmod\vibe_images\`).
+  Генератор: `C:\hvchk\make_tv_art.py` → `tv_art_report.txt` (идемпотентен, в конце печатает
+  «hv осталось: []»).
+- Гейты: `javac @C:\hvchk\jargs11.txt` → exit 0 (`C:\hvchk\javac_tv2.txt`),
+  `python C:\hvchk\audit2.py` → `hooks 152 problems 1` (проблема — известный `NOJAVAP
+  ChatPlusMixin:30`, к этой пачке не относится). Сборку jar не запускал: правки — только
+  ресурсы и строки путей, пересобрать нужно пользователю, чтобы картинки попали в jar.
+
+

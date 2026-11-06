@@ -37,7 +37,7 @@ import java.util.UUID;
  * ctx.drawDeferredElements(): иначе арт лег бы поверх панели и закрыл её.
  */
 public class AccountScreen extends Screen {
-    private static final Identifier BG = Identifier.of("visualmod", "textures/gui/bg_hv.png");
+    private static final Identifier BG = Identifier.of("visualmod", "textures/gui/bg_tv.png");
     private static final Identifier LOGO = Identifier.of("visualmod", "textures/gui/hw_logo.png");
     private static final int BG_PX = 1376, BG_PY = 768;
 

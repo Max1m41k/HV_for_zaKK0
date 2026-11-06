@@ -20,7 +20,7 @@ import java.util.Locale;
  */
 public final class ShortcutIcon {
 
-    private static final String ICO_RES = "/assets/visualmod/icons/hv_icon.ico";
+    private static final String ICO_RES = "/assets/visualmod/icons/tv_icon.ico";
 
     private static volatile boolean started;
 

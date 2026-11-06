@@ -24,7 +24,7 @@ import java.util.List;
 @Mixin(TitleScreen.class)
 public class MainMenuButtonMixin extends Screen {
 
-    private static final Identifier BG = Identifier.of("visualmod", "textures/gui/bg_hv.png");
+    private static final Identifier BG = Identifier.of("visualmod", "textures/gui/bg_tv.png");
     private static final Identifier HW_LOGO = Identifier.of("visualmod", "textures/gui/hw_logo.png");
     private static final int MAIN_W = 188, MAIN_H = 22, ICON = 24, ICON_GAP = 6;
     /** Размер значка в квадратной кнопке: в 9x9 логотип и две шестерни не читаются. */

@@ -13,7 +13,7 @@ public class FunTimeScreen extends Screen {
     private final Screen parent;
     private int selectedCategory = 0;
 
-    private static final Identifier BG = Identifier.of("visualmod", "textures/gui/bg_hl.png");
+    private static final Identifier BG = Identifier.of("visualmod", "textures/gui/bg_tv.png");
     private static final Identifier MINECART = Identifier.of("visualmod", "textures/gui/minecart_chest.png");
 
     private final List<ButtonWidget> cartButtons = new ArrayList<>();

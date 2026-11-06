@@ -25,11 +25,11 @@ import java.util.List;
  */
 public final class WindowIconChanger {
 
-    private static final String[] HV_ICONS = {
-            "/assets/visualmod/icons/hv_icon_16.png",
-            "/assets/visualmod/icons/hv_icon_32.png",
-            "/assets/visualmod/icons/hv_icon_48.png",
-            "/assets/visualmod/icons/hv_icon.png",
+    private static final String[] TV_ICONS = {
+            "/assets/visualmod/icons/tv_icon_16.png",
+            "/assets/visualmod/icons/tv_icon_32.png",
+            "/assets/visualmod/icons/tv_icon_48.png",
+            "/assets/visualmod/icons/tv_icon.png",
     };
 
     /** Сколько раз навесить иконку просто так: первый тик и одна перестановка через 3 секунды. */
@@ -70,9 +70,9 @@ public final class WindowIconChanger {
     private static GLFWImage.Buffer images() {
         if (images != null || broken) return images;
 
-        List<ByteBuffer> decoded = new ArrayList<>(HV_ICONS.length);
-        List<int[]> dims = new ArrayList<>(HV_ICONS.length);
-        for (String path : HV_ICONS) {
+        List<ByteBuffer> decoded = new ArrayList<>(TV_ICONS.length);
+        List<int[]> dims = new ArrayList<>(TV_ICONS.length);
+        for (String path : TV_ICONS) {
             ByteBuffer packed = null;
             try (InputStream is = WindowIconChanger.class.getResourceAsStream(path)) {
                 if (is == null) continue;

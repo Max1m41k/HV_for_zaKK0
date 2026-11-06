@@ -20,7 +20,7 @@ public class HolyWorldScreen extends Screen {
     private int selectedCategory = 0;
     public static String commandToSend = null;
 
-    private static final Identifier BG = Identifier.of("visualmod", "textures/gui/bg_hl.png");
+    private static final Identifier BG = Identifier.of("visualmod", "textures/gui/bg_tv.png");
     private static final Identifier BLUE_CUBE = Identifier.of("visualmod", "textures/gui/blue_cube.png");
 
     private final List<ButtonWidget> anarchyButtons = new ArrayList<>();
